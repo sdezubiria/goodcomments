@@ -30,7 +30,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
-# Sign with a real identity when there is one, so macOS keeps permissions (Screen Recording)
+# Sign with a real identity when there is one (GOODCOMMENTS_SIGN_IDENTITY=- forces ad-hoc), so macOS keeps permissions (Screen Recording)
 # across rebuilds; an ad-hoc signature changes on every build and makes macOS ask again.
 IDENTITY="${GOODCOMMENTS_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -nE 's/.*"(Apple Development: [^"]+)".*/\1/p' | head -1)}"
 if [ -n "$IDENTITY" ]; then

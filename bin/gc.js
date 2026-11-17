@@ -26,6 +26,7 @@ const HELP = `gc — track feedback: open → fixed → done
 
   gc open        open the board in the browser
   gc serve       run the server in the foreground
+  gc version
   gc mcp         run as an MCP server (stdio) for agents
 
 Env: GOODCOMMENTS_URL (default ${BASE}), GOODCOMMENTS_ACTOR (name shown on changes), GOODCOMMENTS_TOKEN`;
@@ -59,7 +60,7 @@ const print = (x, opt) => console.log(opt.json ? JSON.stringify(x, null, 2) : x)
 
 async function main() {
   let argv = process.argv.slice(2);
-  if (!argv.length || (argv[0].startsWith('-') && !['-h', '--help'].includes(argv[0]))) argv = ['list', ...argv];
+  if (!argv.length || (argv[0].startsWith('-') && !['-h', '--help', '-v', '--version'].includes(argv[0]))) argv = ['list', ...argv];
   const [cmd, ...rest] = argv;
   const { pos, opt } = parse(rest);
   const id = pos[0];
@@ -68,6 +69,11 @@ async function main() {
   switch (cmd) {
     case 'help': case '-h': case '--help':
       return console.log(HELP);
+    case 'version': case '-v': case '--version': {
+      const { readFile } = await import('node:fs/promises');
+      const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+      return console.log(`goodcomments ${pkg.version}`);
+    }
 
     case 'mcp': {
       const { runMcp } = await import('../server/mcp.js');

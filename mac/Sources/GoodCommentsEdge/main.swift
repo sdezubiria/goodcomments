@@ -451,17 +451,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
     }
 
+    /// Where server/index.js lives: next to the app (a repo build or Homebrew), or wherever the installer
+    /// said (an app copied to ~/Applications). A saved path is only trusted if it still exists.
     static func findRoot() -> String? {
-        if let env = ProcessInfo.processInfo.environment["GOODCOMMENTS_HOME"] { return env }
-        if let saved = UserDefaults.standard.string(forKey: "root") { return saved }
-        var url = Bundle.main.bundleURL
+        let fm = FileManager.default
+        let hasServer = { (path: String) in fm.fileExists(atPath: (path as NSString).appendingPathComponent("server/index.js")) }
+        if let env = ProcessInfo.processInfo.environment["GOODCOMMENTS_HOME"], hasServer(env) { return env }
+        var url = Bundle.main.bundleURL.resolvingSymlinksInPath()
         for _ in 0..<6 {
             url.deleteLastPathComponent()
-            if FileManager.default.fileExists(atPath: url.appendingPathComponent("server/index.js").path) {
-                UserDefaults.standard.set(url.path, forKey: "root")
-                return url.path
-            }
+            if hasServer(url.path) { return url.path }
         }
+        if let saved = UserDefaults.standard.string(forKey: "root"), hasServer(saved) { return saved }
         return nil
     }
 
