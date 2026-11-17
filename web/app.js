@@ -2,7 +2,6 @@ import * as pile from './pile.js';
 const $ = (s, el = document) => el.querySelector(s);
 const params = new URLSearchParams(location.search);
 if (params.has('embed')) document.documentElement.classList.add('embed');
-const SKINS = ['line', 'trunk', 'rail'];
 
 const store = {
   get(k, d) { try { return localStorage.getItem('gc.' + k) ?? d; } catch { return d; } },
@@ -18,16 +17,13 @@ const state = {
   expanded: new Set(),
   asking: null,          // { id, kind: 'fix' | 'reopen' }
   pending: false,
-  skin: 'trunk',         // trunk | rail | line (set below)
   moved: null,           // { id, status } — the piece that just changed state, to animate its arrival
   allDone: false,        // show every done comment, not just the latest
   seen: new Set(),       // cards already on screen: they don't replay their entrance
   moving: false,         // a card is mid-fall: hold re-renders until it lands
   askFiles: [],          // screenshots waiting in the open fix / reopen box
 };
-state.skin = SKINS.includes(params.get('skin')) ? params.get('skin') : SKINS.includes(store.get('skin')) ? store.get('skin') : 'trunk';
-document.documentElement.dataset.skin = state.skin;
-const board = () => state.skin !== 'line';
+document.documentElement.dataset.skin = 'trunk';   // the one look: monkeys on a trunk
 
 // ---------- api ----------
 // When the server runs with GOODCOMMENTS_TOKEN (cloud mode) we ask for it once and keep it.
@@ -182,24 +178,7 @@ function render() {
   }
 
   renderProjects();
-  for (const b of $('#skins').children) b.setAttribute('aria-checked', String(b.dataset.skin === state.skin));
-
-  if (board()) {
-    renderBoard();
-  } else {
-  const list = state.comments.filter((c) => c.status === state.status);
-  patchItems(list.map((c, i) => renderItem(c, i)).join(''));
-  pile.attach(null);
-  const empty = $('#empty');
-  empty.hidden = list.length > 0;
-  if (!list.length) {
-    empty.innerHTML = {
-      open: '<strong>Nothing on the line</strong>Hang a comment above, or let an agent add one.',
-      fixed: '<strong>Nothing to check</strong>Fixed comments wait here for your OK.',
-      done: '<strong>Nothing dried yet</strong>Approved comments end up here.',
-    }[state.status];
-  }
-  }
+  renderBoard();
   state.moved = null;
   for (const c of state.comments) state.seen.add(c.id);
   $('.rope').style.setProperty('--rope-h', $('#items').scrollHeight + 60 + 'px');
@@ -207,18 +186,11 @@ function render() {
   if (state.asking) $(`#ask-${state.asking.id} input`)?.focus();
 }
 
-// ---------- board skins: every state on one column, top to bottom ----------
+// ---------- the board: every state on one column, top to bottom ----------
 const ZONES = {
-  trunk: {
-    open: ['Hanging', 'Open comments hook onto the high sticks.'],
-    fixed: ['To check', 'An agent pulled the stick — it dropped and swung down here.'],
-    done: ['The pile', 'Pull the last stick and it falls here. The pile grows as the project gets done.'],
-  },
-  rail: {
-    open: ['On the rail', 'Tickets waiting to be worked on.'],
-    fixed: ['The pass', 'Fixed and waiting for your OK.'],
-    done: ['The spike', 'Approved tickets get spiked.'],
-  },
+  open: ['Hanging', 'Open comments hook onto the high sticks.'],
+  fixed: ['To check', 'An agent pulled the stick — it dropped and swung down here.'],
+  done: ['The pile', 'Pull the last stick and it falls here. The pile grows as the project gets done.'],
 };
 // resting tilt shrinks on wide panels, so the far edge never sags more than a few pixels
 const tiltScale = () => Math.min(1, 380 / ($('#line')?.clientWidth || 380));
@@ -227,7 +199,7 @@ const tilt = (id, span = 18) => ((id * 47) % (span + 1)) - span / 2;
 function renderBoard() {
   const by = (s) => state.comments.filter((c) => c.status === s);
   const [open, fixed, done] = ['open', 'fixed', 'done'].map(by);
-  const z = ZONES[state.skin];
+  const z = ZONES;
   const total = state.comments.length;
   const pct = total ? Math.round((done.length / total) * 100) : 0;
   let i = 0;
@@ -241,14 +213,10 @@ function renderBoard() {
 
   const newest = state.moved?.status === 'done' ? state.moved.id : null;
   const heap = done.slice(0, 60).map((c) =>
-    `<i data-key="c${c.id}" class="${c.id === newest ? 'new' : ''}" style="--pc:${esc(c.project_color || 'var(--ink-3)')};--r:${tilt(c.id)}deg;--n:${tilt(c.id)}" title="#${c.id} ${esc(c.body.slice(0, 60))}"></i>`).join('');
-  const pileHtml = state.skin === 'trunk'
-    ? `<div class="pile" data-act="toggle-done" style="--fill:${pct}" title="Drag the monkeys around · click empty space to list what's done">
+    `<i data-key="c${c.id}" class="${c.id === newest ? 'new' : ''}" style="--pc:${esc(c.project_color || 'var(--ink-3)')};--r:${tilt(c.id)}deg" title="#${c.id} ${esc(c.body.slice(0, 60))}"></i>`).join('');
+  const pileHtml = `<div class="pile" data-act="toggle-done" style="--fill:${pct}" title="Drag the monkeys around · click empty space to list what's done">
          <span class="heap physics">${heap}</span><span class="ground"></span>
-         <span class="pile-label">${done.length} done · ${pct}%</span></div>`
-    : `<button class="spike" data-act="toggle-done" title="${done.length} tickets spiked">
-         <span class="needle"></span><span class="stack">${heap}</span>
-         <span class="pile-label">${done.length} spiked · ${pct}%</span></button>`;
+         <span class="pile-label">${done.length} done · ${pct}%</span></div>`;
   const doneShown = state.allDone ? done : [];
   const doneZone = zone('done', doneShown, pileHtml, done.length).replace('</ol>', `</ol>${done.length ? `<button class="act show-done" data-act="toggle-done">${state.allDone ? 'Hide done' : `Show ${done.length} done`}</button>` : ''}`);
 
@@ -276,7 +244,7 @@ function renderProjects() {
 }
 
 const hash = (str) => { let h = 5381; for (let k = 0; k < str.length; k++) h = ((h << 5) + h + str.charCodeAt(k)) | 0; return (h >>> 0).toString(36); };
-const TRANSIENT = ['fresh', 'landed', 'landed-rail', 'leaving', 'pulling', 'arrived-open', 'arrived-fixed', 'arrived-done', 'to-open', 'to-fixed', 'to-done', 'dragging'];
+const TRANSIENT = ['fresh', 'landed', 'leaving', 'pulling', 'arrived-open', 'arrived-fixed', 'arrived-done', 'to-open', 'to-fixed', 'to-done', 'dragging'];
 
 /**
  * Update the list without rebuilding cards that didn't change: they keep their
@@ -348,7 +316,7 @@ function renderItem(c, i) {
       <form class="note-form" data-note="${c.id}"><input placeholder="Add a note…"><button class="act">Note</button></form>
     </div>` : '';
 
-  const sig = hash(JSON.stringify([c, expanded, asking, d?.events?.length ?? -1, state.skin, asking ? state.askFiles.map((f) => f.name + f.size) : 0]));
+  const sig = hash(JSON.stringify([c, expanded, asking, d?.events?.length ?? -1, asking ? state.askFiles.map((f) => f.name + f.size) : 0]));
   return `
     <li data-sig="${sig}" class="item status-${c.status}${expanded ? ' expanded' : ''}${state.seen.has(c.id) ? '' : ' fresh'}${state.moved?.id === c.id ? ` arrived-${c.status}` : ''}" data-id="${c.id}" style="--i:${Math.min(i, 12)};--pc:${esc(c.project_color || 'var(--ink-3)')};--tw:${(tilt(c.id, 4) * tiltScale()).toFixed(2)}deg">
       <span class="pin" aria-hidden="true"></span>
@@ -394,7 +362,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms * SLOW));
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
- * Trunk / rail: the card leaves from where it is and lands where it belongs.
+ * The card leaves from where it is and lands where it belongs.
  * 1. pull: the stick slides back into the trunk (or the clip opens)
  * 2. fall: a copy of the card drops under gravity to its new spot
  *    (done → it tumbles and shrinks into its monkey head / ticket on the pile)
@@ -431,7 +399,7 @@ async function boardMove(li, id, status, note, { remote = false } = {}) {
 
   // where it lands
   const landing = status === 'done'
-    ? ($('.heap i.new, .stack i.new') || $('.pile, .spike'))
+    ? ($('.heap i.new') || $('.pile'))
     : $(`.item[data-id="${id}"]`);
   if (!landing || !from.width) { ghost.remove(); settle(0); return true; }
   const realCard = status === 'done' ? null : landing;
@@ -446,24 +414,15 @@ async function boardMove(li, id, status, note, { remote = false } = {}) {
   const to = landing.getBoundingClientRect();
   glide(before, id);
 
-  const rail = state.skin === 'rail';
-  const anim = status === 'done'
-    ? fallInto(ghost, from, to, rail)
-    : dropTo(ghost, from, to, rail);
+  const anim = status === 'done' ? fallInto(ghost, from, to) : dropTo(ghost, from, to);
   await anim.finished.catch(() => {});
   ghost.remove();
 
   landing.style.visibility = '';
   if (realCard) {
-    realCard.classList.add(rail ? 'landed-rail' : 'landed');
+    realCard.classList.add('landed');
   } else {
-    if (rail) {
-      landing.classList.add('landed');
-      $('.spike')?.classList.add('thud');
-      setTimeout(() => $('.spike')?.classList.remove('thud'), 450);
-    } else {
-      pile.release(landing);
-    }
+    pile.release(landing);
   }
   if (remote) toast({ fixed: `#${id} was marked fixed`, done: `#${id} was approved`, open: `#${id} was reopened` }[status]);
   else if (!quietToast) toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
@@ -472,11 +431,11 @@ async function boardMove(li, id, status, note, { remote = false } = {}) {
   return true;
 }
 
-// ---------- motion helpers (board skins) ----------
+// ---------- motion helpers ----------
 /** Screen positions of the cards, zone headers and the pile, by key. */
 function snapshot() {
   const map = new Map();
-  for (const el of document.querySelectorAll('#items .item[data-id], #items .zone-head, #items .pile, #items .spike, #items .zone-empty, #items .show-done')) {
+  for (const el of document.querySelectorAll('#items .item[data-id], #items .zone-head, #items .pile, #items .zone-empty, #items .show-done')) {
     map.set(flipKey(el), el.getBoundingClientRect().top);
   }
   return map;
@@ -485,7 +444,7 @@ const flipKey = (el) => el.dataset.id ? `i${el.dataset.id}` : `${el.className.sp
 
 /** Everything that moved slides from its old spot to the new one. */
 function glide(before, skipId) {
-  for (const el of document.querySelectorAll('#items .item[data-id], #items .zone-head, #items .pile, #items .spike, #items .zone-empty, #items .show-done')) {
+  for (const el of document.querySelectorAll('#items .item[data-id], #items .zone-head, #items .pile, #items .zone-empty, #items .show-done')) {
     if (el.dataset.id === String(skipId)) continue;
     const was = before.get(flipKey(el));
     if (was === undefined) continue;
@@ -502,17 +461,17 @@ function sampled(n, fn) {
 }
 
 /** Drop down a level (or climb back up): gravity, a slight tilt, lands exactly on the new stick. */
-function dropTo(ghost, from, to, rail) {
+function dropTo(ghost, from, to) {
   const dx = to.left - from.left;
   const dy = to.top - from.top;
-  ghost.style.transformOrigin = rail ? '0 0' : '70px 0';
+  ghost.style.transformOrigin = '70px 0';
   if (dy <= 0) {   // going up (reopen / undo): a quick lift, then it eases onto the stick
     return ghost.animate(sampled(14, (t) => {
       const e = 1 - (1 - t) ** 3;
-      return { transform: `translate(${dx * e}px, ${dy * e}px) rotate(${rail ? 0 : -Math.min(2, (7 / from.width) * 57.3) * Math.sin(Math.PI * t)}deg)` };
+      return { transform: `translate(${dx * e}px, ${dy * e}px) rotate(${-Math.min(2, (7 / from.width) * 57.3) * Math.sin(Math.PI * t)}deg)` };
     }), { duration: Math.min(900, 380 + Math.abs(dy) * 0.35) * SLOW, fill: 'forwards' });
   }
-  const tilt = rail ? 0 : Math.min(3, (10 / from.width) * 57.3);
+  const tilt = Math.min(3, (10 / from.width) * 57.3);
   return ghost.animate(sampled(16, (t) => ({
     // y = ½gt²: slow start, speeding up; a little sideways drift and tilt as it lets go
     transform: `translate(${dx * t}px, ${dy * t * t}px) rotate(${tilt * Math.sin(Math.PI * t)}deg)`,
@@ -520,20 +479,20 @@ function dropTo(ghost, from, to, rail) {
 }
 
 /** Approve: the card falls straight down onto the pile and only shrinks as it gets there. */
-function fallInto(ghost, from, to, rail) {
+function fallInto(ghost, from, to) {
   const dx = to.left + to.width / 2 - (from.left + from.width / 2);
   const dy = to.top + to.height / 2 - (from.top + from.height / 2);
   const side = dx >= 0 ? 1 : -1;
   ghost.style.transformOrigin = '50% 50%';
-  // end the size of a monkey head (or a ticket sliver on the spike)
-  const endX = rail ? 120 / from.width : 26 / from.width;
-  const endY = rail ? 6 / from.height : 26 / from.height;
+  // end the size of a monkey head
+  const endX = 26 / from.width;
+  const endY = 26 / from.height;
   return ghost.animate(sampled(18, (t) => {
     const k = t < 0.55 ? 0 : (t - 0.55) / 0.45;          // shrink only in the last part of the fall
     const sx = 1 - k * (1 - endX);
     const sy = 1 - k * (1 - endY);
     return {
-      transform: `translate(${dx * t * t}px, ${dy * t * t}px) rotate(${rail ? 0 : side * Math.min(10, (30 / from.width) * 57.3) * t}deg) scale(${sx}, ${sy})`,
+      transform: `translate(${dx * t * t}px, ${dy * t * t}px) rotate(${side * Math.min(10, (30 / from.width) * 57.3) * t}deg) scale(${sx}, ${sy})`,
       opacity: t < 0.9 ? 1 : 1 - (t - 0.9) / 0.1,
     };
   }), { duration: Math.min(1000, 320 + Math.sqrt(Math.abs(dy)) * 28) * SLOW, fill: 'forwards' });
@@ -649,7 +608,7 @@ let typed = '';
 document.addEventListener('keydown', (ev) => {
   if (isEditable(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey || ev.key.length !== 1) return;
   typed = (typed + ev.key.toLowerCase()).slice(-3);
-  if (typed === 'ook' && state.skin === 'trunk') {
+  if (typed === 'ook') {
     document.querySelectorAll('#items .monkey').forEach((m, k) => setTimeout(() => trick(m, 'wave'), k * 80));
     const first = $('#items .monkey');
     if (first) say(first, 'Ook!');
@@ -675,7 +634,7 @@ async function changeStatus(id, status, note, { from = 'user' } = {}) {
   const step = before && { id, from: before.status, to: status, fixNote: before.fix_note, note };
   const li = $(`.item[data-id="${id}"]`);
   let ok;
-  if (li && board() && !reduceMotion()) {
+  if (li && !reduceMotion()) {
     quietToast = from !== 'user';
     ok = await boardMove(li, id, status, note);
   } else {
@@ -684,7 +643,7 @@ async function changeStatus(id, status, note, { from = 'user' } = {}) {
       await api('POST', `/api/comments/${id}/status`, { status, note: note || undefined });
       state.asking = null;
       state.moved = { id, status };
-      await sleep(board() ? 420 : 300);
+      await sleep(300);
       if (from === 'user') toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
       await load();
       ok = true;
@@ -843,28 +802,13 @@ $('#states').addEventListener('click', (ev) => {
   state.status = b.dataset.status;
   state.asking = null;
   store.set('status', state.status);
-  if (board()) {
-    // every state is visible: jump to its zone instead of filtering
-    if (state.status === 'done' && !state.allDone) { state.allDone = true; }
-    render();
-    const zone = $(`.zone[data-zone="${state.status}"]`);
-    zone?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    zone?.classList.add('flash');
-    setTimeout(() => zone?.classList.remove('flash'), 900);
-    return;
-  }
+  // every state is visible: jump to its zone instead of filtering
+  if (state.status === 'done' && !state.allDone) state.allDone = true;
   render();
-  $('#line').scrollTop = 0;
-});
-
-$('#skins').addEventListener('click', (ev) => {
-  const b = ev.target.closest('[data-skin]');
-  if (!b) return;
-  state.skin = b.dataset.skin;
-  store.set('skin', state.skin);
-  document.documentElement.dataset.skin = state.skin;
-  render();
-  $('#line').scrollTop = 0;
+  const zone = $(`.zone[data-zone="${state.status}"]`);
+  zone?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  zone?.classList.add('flash');
+  setTimeout(() => zone?.classList.remove('flash'), 900);
 });
 
 $('#projects').addEventListener('click', (ev) => {
@@ -1040,7 +984,7 @@ function connect() {
     const c = data.id && state.comments.find((x) => x.id === data.id);
     const li = c && $(`#items .item[data-id="${data.id}"]`);
     // an agent pulled a stick: show the card falling instead of just jumping
-    if (li && data.status && c.status !== data.status && board() && !state.moving && !reduceMotion()) {
+    if (li && data.status && c.status !== data.status && !state.moving && !reduceMotion()) {
       clearTimeout(reloadTimer);
       boardMove(li, data.id, data.status, null, { remote: true });
       return;
@@ -1053,3 +997,18 @@ function connect() {
 setInterval(() => !state.asking && render(), 60000); // refresh "5m" labels
 load().catch((e) => toast(e.message));
 connect();
+
+// ---------- Mac edge panel: keep open / minimize ----------
+// Only inside the Mac app, which exposes a message handler named "gc".
+const panelBridge = window.webkit?.messageHandlers?.gc;
+if (panelBridge) {
+  $('#panel-ctl').hidden = false;
+  $('#pin').addEventListener('click', () => panelBridge.postMessage({ action: 'togglePin' }));
+  $('#minimize').addEventListener('click', () => panelBridge.postMessage({ action: 'minimize' }));
+}
+/** The app tells the page whether the panel is kept open. */
+window.gcPanel = ({ pinned }) => {
+  const b = $('#pin');
+  b.setAttribute('aria-pressed', String(!!pinned));
+  b.title = pinned ? 'Kept open: click so it slides away when you leave it' : 'Keep open';
+};

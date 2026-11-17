@@ -15,6 +15,7 @@ var panelWidth: CGFloat = {
 let margin: CGFloat = 8
 let edgeDwell: TimeInterval = 0.22   // how long the pointer rests on the edge before the line slides in
 let leaveDelay: TimeInterval = 0.6   // how long the pointer is away before it slides out
+let peek: CGFloat = 10               // a kept-open panel that's minimized leaves this much showing
 
 final class EdgePanel: NSPanel {
     weak var web: WKWebView?
@@ -72,7 +73,7 @@ final class ResizeHandle: NSView {
     override func mouseUp(with event: NSEvent) { onEnd?() }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     var panel: EdgePanel!
     var web: WKWebView!
     var statusItem: NSStatusItem!
@@ -126,6 +127,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         glass.layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
 
         let config = WKWebViewConfiguration()
+        // the page's Keep open / Minimize buttons talk to us through window.webkit.messageHandlers.gc
+        config.userContentController.add(self, name: "gc")
         web = WKWebView(frame: .zero, configuration: config)
         web.setValue(false, forKey: "drawsBackground")
         web.underPageBackgroundColor = .clear
@@ -155,7 +158,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return NSRect(x: v.maxX - panelWidth - margin, y: v.minY + margin, width: panelWidth, height: v.height - margin * 2)
     }
 
-    func hiddenFrame(_ s: NSScreen) -> NSRect { shownFrame(s).offsetBy(dx: panelWidth + margin + 30, dy: 0) }
+    func hiddenFrame(_ s: NSScreen) -> NSRect {
+        pinned
+            ? shownFrame(s).offsetBy(dx: panelWidth + margin - peek, dy: 0)   // tucked away, a sliver stays
+            : shownFrame(s).offsetBy(dx: panelWidth + margin + 30, dy: 0)
+    }
 
     func show(focus: Bool = false) {
         let s = shown ? (panel.screen ?? screenUnderPointer()) : screenUnderPointer()
@@ -191,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().setFrame(hiddenFrame(s), display: true)
         }, completionHandler: { [weak self] in
-            guard let self, !self.shown else { return }
+            guard let self, !self.shown, !self.pinned else { return }
             self.panel.orderOut(nil)
         })
     }
@@ -205,7 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let p = NSEvent.mouseLocation
         if !shown {
             let s = screenUnderPointer()
-            let atEdge = p.x >= s.frame.maxX - 2 && p.y < s.visibleFrame.maxY && p.y > s.frame.minY + 40
+            let onPeek = pinned && panel.isVisible && panel.frame.contains(p)
+            let atEdge = onPeek || (p.x >= s.frame.maxX - 2 && p.y < s.visibleFrame.maxY && p.y > s.frame.minY + 40)
             if atEdge && NSEvent.pressedMouseButtons == 0 {
                 if edgeSince == nil { edgeSince = Date() }
                 if Date().timeIntervalSince(edgeSince!) >= edgeDwell { edgeSince = nil; show() }
@@ -251,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let showItem = NSMenuItem(title: "Show comments", action: #selector(toggle), keyEquivalent: "c")
         showItem.keyEquivalentModifierMask = [.control, .option]
         menu.addItem(showItem)
+        menu.addItem(NSMenuItem(title: "Minimize", action: #selector(minimize), keyEquivalent: ""))
         pinItem = NSMenuItem(title: "Keep open", action: #selector(togglePin), keyEquivalent: "")
         pinItem.state = pinned ? .on : .off
         menu.addItem(pinItem)
@@ -266,8 +275,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         pinned.toggle()
         UserDefaults.standard.set(pinned, forKey: "pinned")
         pinItem.state = pinned ? .on : .off
-        if pinned { show() }
+        if pinned { show() } else if !shown { panel.orderOut(nil) }   // unpinned while tucked away: hide fully
+        pushState()
     }
+
+    /// Minimize: slide away even when kept open (a sliver stays at the edge; hover or ⌃⌥C brings it back).
+    @objc func minimize() {
+        edgeSince = nil
+        hide()
+    }
+
+    /// Tell the page whether the panel is kept open, so its button shows the right state.
+    func pushState() {
+        web.evaluateJavaScript("window.gcPanel && gcPanel({ pinned: \(pinned) })")
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
+        switch action {
+        case "togglePin": togglePin()
+        case "minimize": minimize()
+        default: break
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { pushState() }
 
     @objc func openBrowser() { NSWorkspace.shared.open(URL(string: base)!) }
     @objc func reload() {
