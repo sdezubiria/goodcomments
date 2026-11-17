@@ -165,6 +165,11 @@
   .board-shot img { display: block; width: 100%; height: auto; }
   .board-shot::after { content: "See the whole column ↗"; position: absolute; left: 0; right: 0; bottom: 0; padding: 70px 0 18px; text-align: center; font-size: 13px; font-weight: 650; color: var(--ink-2); background: linear-gradient(transparent, #f6f7fa 70%); }
   @media (max-width: 900px) { .board-shot { position: relative; max-height: 520px; } }
+  .gif-shot { margin: 0; position: sticky; top: 24px; }
+  .gif-shot img { display: block; width: 100%; max-width: 380px; height: auto; margin: 0 auto; border-radius: 22px; border: 1px solid var(--edge); box-shadow: var(--shadow-up); background: #f6f7fa; }
+  .gif-shot figcaption { max-width: 380px; margin: 12px auto 0; font-size: 15px; color: var(--ink-2); }
+  .gif-shot figcaption b { color: var(--ink); }
+  @media (max-width: 900px) { .gif-shot { position: relative; top: 0; } }
   .shots { display: grid; gap: 18px; }
   .shot { margin: 0; }
   .shot img { display: block; width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--edge); box-shadow: var(--shadow); background: #f6f7fa; }
@@ -245,9 +250,10 @@
     <h2>See it in action.</h2>
     <p class="lede">Real screenshots of the column (with made-up projects). Everything you need to follow up on feedback, at the edge of your screen.</p>
     <div class="gallery">
-      <a class="board-shot" href="img/board.jpg" target="_blank" title="Open the full screenshot">
-        <img src="img/board.jpg" alt="The GoodComments column: open comments hanging from monkeys on a trunk, two fixed comments waiting to be checked, and a pile of monkey heads for the done ones" loading="lazy" width="800" height="2923">
-      </a>
+      <figure class="gif-shot">
+        <img src="img/falling.gif" alt="An agent marks a comment fixed and it drops to To check; approving comments drops them onto the pile of monkeys" loading="lazy" width="400" height="1009">
+        <figcaption><b>Watch it work.</b> An agent marks a comment fixed and it drops to “To check”. Approve it and it falls onto the pile. <a href="img/board.jpg" target="_blank">See the full column ↗</a></figcaption>
+      </figure>
       <div class="shots">
         <figure class="shot"><img src="img/card-screenshot.jpg" alt="A comment from Acme with a screenshot of the pricing page attached" loading="lazy" width="1040" height="516">
           <figcaption><b>Screenshots on any comment.</b> Paste with ⌘V or drop images on a card. Agents get them as images too.</figcaption></figure>
