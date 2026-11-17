@@ -16,6 +16,12 @@ open mac/build/GoodComments.app
 
 The Mac app lives in the menu bar (speech-bubble icon). Rest the pointer on the right edge of the screen and the column slides in; ⌃⌥C toggles it; **Keep open** pins it. It starts the server for you if needed.
 
+## Looks
+Switch in the column header (or add `?skin=` to the URL):
+- **Trunk** (default): monkeys hang from sticks on a trunk. Fixing a comment pulls its stick so it drops to "To check"; approving it drops it onto the pile at the bottom, which grows as the project gets done.
+- **Rail**: kitchen tickets on a rail; fixed tickets wait at "the pass", approved ones get spiked.
+- **Line**: the original clothesline, one state per tab.
+
 ## Projects
 ```bash
 cd ~/Code/my-repo && gc project add "My repo" --path .

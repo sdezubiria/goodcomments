@@ -1,6 +1,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const params = new URLSearchParams(location.search);
 if (params.has('embed')) document.documentElement.classList.add('embed');
+const SKINS = ['line', 'trunk', 'rail'];
 
 const store = {
   get(k, d) { try { return localStorage.getItem('gc.' + k) ?? d; } catch { return d; } },
@@ -16,7 +17,13 @@ const state = {
   expanded: new Set(),
   asking: null,          // { id, kind: 'fix' | 'reopen' }
   pending: false,
+  skin: 'trunk',         // trunk | rail | line (set below)
+  moved: null,           // { id, status } — the piece that just changed state, to animate its arrival
+  allDone: false,        // show every done comment, not just the latest
 };
+state.skin = SKINS.includes(params.get('skin')) ? params.get('skin') : SKINS.includes(store.get('skin')) ? store.get('skin') : 'trunk';
+document.documentElement.dataset.skin = state.skin;
+const board = () => state.skin !== 'line';
 
 // ---------- api ----------
 // When the server runs with GOODCOMMENTS_TOKEN (cloud mode) we ask for it once and keep it.
@@ -149,7 +156,11 @@ function render() {
   }
 
   renderProjects();
+  for (const b of $('#skins').children) b.setAttribute('aria-checked', String(b.dataset.skin === state.skin));
 
+  if (board()) {
+    renderBoard();
+  } else {
   const list = state.comments.filter((c) => c.status === state.status);
   $('#items').innerHTML = list.map((c, i) => renderItem(c, i)).join('');
   const empty = $('#empty');
@@ -161,9 +172,58 @@ function render() {
       done: '<strong>Nothing dried yet</strong>Approved comments end up here.',
     }[state.status];
   }
+  }
+  state.moved = null;
   $('.rope').style.setProperty('--rope-h', $('#items').scrollHeight + 60 + 'px');
 
   if (state.asking) $(`#ask-${state.asking.id} input`)?.focus();
+}
+
+// ---------- board skins: every state on one column, top to bottom ----------
+const ZONES = {
+  trunk: {
+    open: ['Hanging', 'Open comments hook onto the high sticks.'],
+    fixed: ['To check', 'An agent pulled the stick — it dropped and swung down here.'],
+    done: ['The pile', 'Pull the last stick and it falls here. The pile grows as the project gets done.'],
+  },
+  rail: {
+    open: ['On the rail', 'Tickets waiting to be worked on.'],
+    fixed: ['The pass', 'Fixed and waiting for your OK.'],
+    done: ['The spike', 'Approved tickets get spiked.'],
+  },
+};
+const tilt = (id, span = 18) => ((id * 47) % (span + 1)) - span / 2;
+
+function renderBoard() {
+  const by = (s) => state.comments.filter((c) => c.status === s);
+  const [open, fixed, done] = ['open', 'fixed', 'done'].map(by);
+  const z = ZONES[state.skin];
+  const total = state.comments.length;
+  const pct = total ? Math.round((done.length / total) * 100) : 0;
+  let i = 0;
+  const zone = (key, items, inner = '', count = items.length) => `
+    <li class="zone" data-zone="${key}">
+      <div class="zone-head"><span class="dot ${key}"></span><h3>${z[key][0]}</h3><b>${count}</b><span class="zone-hint">${z[key][1]}</span></div>
+      ${inner}
+      <ol class="zone-items">${items.map((c) => renderItem(c, i++)).join('')}</ol>
+      ${!items.length && key !== 'done' ? `<p class="zone-empty">${key === 'open' ? 'Nothing hanging. Add one above.' : 'Nothing waiting for you.'}</p>` : ''}
+    </li>`;
+
+  const newest = state.moved?.status === 'done' ? state.moved.id : null;
+  const heap = done.slice(0, 60).map((c) =>
+    `<i class="${c.id === newest ? 'new' : ''}" style="--pc:${esc(c.project_color || 'var(--ink-3)')};--r:${tilt(c.id)}deg;--n:${tilt(c.id)}" title="#${c.id} ${esc(c.body.slice(0, 60))}"></i>`).join('');
+  const pile = state.skin === 'trunk'
+    ? `<button class="pile" data-act="toggle-done" style="--fill:${pct};--heap-w:${Math.max(3, Math.ceil(Math.sqrt(done.length) * 1.3)) * 24}px" title="${pct}% of this view is done">
+         <span class="heap">${heap}</span><span class="ground"></span>
+         <span class="pile-label">${done.length} done · ${pct}%</span></button>`
+    : `<button class="spike" data-act="toggle-done" title="${done.length} tickets spiked">
+         <span class="needle"></span><span class="stack">${heap}</span>
+         <span class="pile-label">${done.length} spiked · ${pct}%</span></button>`;
+  const doneShown = state.allDone ? done : [];
+  const doneZone = zone('done', doneShown, pile, done.length).replace('</ol>', `</ol>${done.length ? `<button class="act show-done" data-act="toggle-done">${state.allDone ? 'Hide done' : `Show ${done.length} done`}</button>` : ''}`);
+
+  $('#items').innerHTML = zone('open', open) + zone('fixed', fixed) + doneZone;
+  $('#empty').hidden = true;
 }
 
 function renderProjects() {
@@ -200,8 +260,8 @@ function renderItem(c, i) {
     <div class="fix"><span class="who">Fixed${c.fixed_by ? ` by ${esc(c.fixed_by)}` : ''} · ${ago(c.fixed_at)}</span>${esc(c.fix_note)}</div>` : '';
 
   const ask = asking ? `
-    <form class="ask" id="ask-${c.id}" data-kind="${asking}">
-      <input placeholder="${asking === 'fix' ? 'What did you change? (required)' : 'What’s still wrong? (optional)'}" ${asking === 'fix' ? 'required' : ''}>
+    <form class="ask" id="ask-${c.id}" data-kind="${asking}" novalidate>
+      <input placeholder="${asking === 'fix' ? 'What did you change?' : 'What’s still wrong? (optional)'}">
       <button class="act ${asking === 'fix' ? 'fixit' : ''}">${asking === 'fix' ? 'Fixed' : 'Reopen'}</button>
       <button type="button" class="act icon" data-act="cancel-ask" title="Cancel">✕</button>
     </form>` : '';
@@ -215,8 +275,22 @@ function renderItem(c, i) {
     </div>` : '';
 
   return `
-    <li class="item status-${c.status}${expanded ? ' expanded' : ''}" data-id="${c.id}" style="--i:${Math.min(i, 12)};--pc:${esc(c.project_color || 'var(--ink-3)')}">
+    <li class="item status-${c.status}${expanded ? ' expanded' : ''}${state.moved?.id === c.id ? ` arrived-${c.status}` : ''}" data-id="${c.id}" style="--i:${Math.min(i, 12)};--pc:${esc(c.project_color || 'var(--ink-3)')};--tw:${tilt(c.id, 4)}deg">
       <span class="pin" aria-hidden="true"></span>
+      <span class="peg" aria-hidden="true"><i></i><i></i>
+      <svg class="monkey" viewBox="0 0 64 54" aria-hidden="true">
+        <path class="arm" d="M21 33 C 15 25, 14 18, 17 11"/>
+        <path class="arm a2" d="M43 33 C 49 25, 50 18, 47 11"/>
+        <path class="arm a2-down" d="M43 33 C 50 38, 54 44, 56 50"/>
+        <circle class="hand" cx="17" cy="10" r="3.6"/><circle class="hand a2" cx="47" cy="10" r="3.6"/><circle class="hand a2-down" cx="56" cy="50" r="3.4"/>
+        <circle class="fur" cx="19" cy="30" r="5.5"/><circle class="fur" cx="45" cy="30" r="5.5"/>
+        <circle class="face" cx="19" cy="30" r="2.8"/><circle class="face" cx="45" cy="30" r="2.8"/>
+        <circle class="fur" cx="32" cy="32" r="12"/>
+        <circle class="face" cx="28.2" cy="29.5" r="4.6"/><circle class="face" cx="35.8" cy="29.5" r="4.6"/>
+        <ellipse class="face" cx="32" cy="36" rx="8.2" ry="6.4"/>
+        <circle class="eye" cx="28.6" cy="30" r="1.5"/><circle class="eye" cx="35.4" cy="30" r="1.5"/>
+        <path class="mouth" d="M28.5 38.2 Q32 40.8 35.5 38.2"/>
+      </svg></span>
       <article class="sheet">
         <div class="meta">
           <span class="proj">${esc(c.project_name || 'No project')}</span>
@@ -241,17 +315,19 @@ function renderItem(c, i) {
 // ---------- actions ----------
 async function changeStatus(id, status, note) {
   const li = $(`.item[data-id="${id}"]`);
-  li?.classList.add('leaving');
+  li?.classList.add('leaving', `to-${status}`);
   try {
     await api('POST', `/api/comments/${id}/status`, { status, note: note || undefined });
     state.asking = null;
-    await new Promise((r) => setTimeout(r, 300));
+    state.moved = { id, status };
+    await new Promise((r) => setTimeout(r, board() ? 420 : 300));
     toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
     await load();
   } catch (e) { li?.classList.remove('leaving'); toast(e.message); }
 }
 
 $('#items').addEventListener('click', async (ev) => {
+  if (ev.target.closest('[data-act="toggle-done"]')) { state.allDone = !state.allDone; return render(); }
   const li = ev.target.closest('.item');
   if (!li) return;
   const id = Number(li.dataset.id);
@@ -294,7 +370,17 @@ $('#items').addEventListener('submit', async (ev) => {
   const value = form.querySelector('input').value.trim();
   if (form.classList.contains('ask')) {
     const id = Number(form.id.slice(4));
-    form.querySelector('input').blur();
+    const input = form.querySelector('input');
+    if (form.dataset.kind === 'fix' && !value) {
+      // a fix needs a note, so whoever checks it knows what to look at
+      input.classList.remove('invalid');
+      void input.offsetWidth; // restart the shake
+      input.classList.add('invalid');
+      input.placeholder = 'Add a short note on what changed';
+      input.focus();
+      return;
+    }
+    input.blur();
     return changeStatus(id, form.dataset.kind === 'fix' ? 'fixed' : 'open', value);
   }
   if (form.dataset.note && value) {
@@ -315,6 +401,26 @@ $('#states').addEventListener('click', (ev) => {
   state.status = b.dataset.status;
   state.asking = null;
   store.set('status', state.status);
+  if (board()) {
+    // every state is visible: jump to its zone instead of filtering
+    if (state.status === 'done' && !state.allDone) { state.allDone = true; }
+    render();
+    const zone = $(`.zone[data-zone="${state.status}"]`);
+    zone?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    zone?.classList.add('flash');
+    setTimeout(() => zone?.classList.remove('flash'), 900);
+    return;
+  }
+  render();
+  $('#line').scrollTop = 0;
+});
+
+$('#skins').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-skin]');
+  if (!b) return;
+  state.skin = b.dataset.skin;
+  store.set('skin', state.skin);
+  document.documentElement.dataset.skin = state.skin;
   render();
   $('#line').scrollTop = 0;
 });
@@ -438,6 +544,15 @@ function openProjectDialog(p = null) {
   $('#pd-delete').hidden = !p;
   dlg.showModal();
 }
+$('#project-form').addEventListener('submit', (ev) => {
+  const name = ev.target.name;
+  if (ev.submitter?.value === 'ok' && !name.value.trim()) {
+    ev.preventDefault();
+    name.classList.remove('invalid'); void name.offsetWidth; name.classList.add('invalid');
+    name.placeholder = 'Give the project a name';
+    name.focus();
+  }
+});
 dlg.addEventListener('close', async () => {
   if (dlg.returnValue !== 'ok') return;
   const f = $('#project-form');

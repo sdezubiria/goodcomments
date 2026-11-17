@@ -17,6 +17,11 @@
       <div class="brand">
         <span class="logo" aria-hidden="true"></span>
         <h1>GoodComments</h1>
+        <div class="skins" id="skins" role="radiogroup" aria-label="Look">
+          <button data-skin="trunk" title="Trunk: comments hang on sticks and drop as they’re fixed">Trunk</button>
+          <button data-skin="rail" title="Receipt rail: tickets go to the pass, then the spike">Rail</button>
+          <button data-skin="line" title="Clothesline">Line</button>
+        </div>
         <span class="live" id="live" title="Live"></span>
       </div>
 
@@ -53,7 +58,7 @@
   </aside>
 
   <dialog id="project-dialog">
-    <form method="dialog" id="project-form">
+    <form method="dialog" id="project-form" novalidate>
       <h2 id="pd-title">New project</h2>
       <label>Name <input name="name" required></label>
       <label>Repo folder <input name="path" placeholder="/Users/you/Code/repo (optional)"></label>
