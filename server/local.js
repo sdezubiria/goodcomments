@@ -68,14 +68,19 @@ export const INSTALL_HINT = 'Claude Code isn’t installed. Install it with: cur
 
 export const agentRuns = () => Object.fromEntries(runs);
 
-const TOOLS = 'Read Edit Write MultiEdit Glob Grep Bash(gc show:*) Bash(gc fix:*) Bash(gc note:*) Bash(git status:*) Bash(git diff:*)';
+const TOOLS = ['Read', 'Edit', 'Write', 'MultiEdit', 'Glob', 'Grep',
+  'mcp__goodcomments__get_comment', 'mcp__goodcomments__mark_fixed', 'mcp__goodcomments__add_note',
+  'Bash(gc show:*)', 'Bash(gc fix:*)', 'Bash(gc note:*)', 'Bash(git status:*)', 'Bash(git diff:*)'].join(' ');
 
 /**
  * The server may have been started from inside a Claude Code session (an agent's `gc` starts it when it isn't
  * running): don't hand that session's variables to the new agent, or it tries to be part of that session.
  */
 function cleanEnv() {
-  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE$|CLAUDE_CODE_|CLAUDE_AGENT_SDK|CLAUDE_PID$|CLAUDE_EFFORT$)/.test(k)));
+  // inside a session, ANTHROPIC_BASE_URL points at that session's own proxy too
+  const session = /^(CLAUDECODE$|CLAUDE_CODE_|CLAUDE_AGENT_SDK|CLAUDE_PID$|CLAUDE_EFFORT$)/;
+  const fromSession = 'CLAUDECODE' in process.env;
+  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !session.test(k) && !(fromSession && k === 'ANTHROPIC_BASE_URL')));
 }
 
 function taskFor(c) {
@@ -87,11 +92,12 @@ function taskFor(c) {
     c.location ? `Where: ${c.location}` : '',
     c.source ? `From: ${c.source}` : '',
     c.status === 'open' && c.reopen_note ? `It was reopened before. What's still wrong: ${c.reopen_note}` : '',
-    shots ? `It has ${shots} attachment(s); run \`gc show ${c.id}\` for its history and notes.` : '',
+    shots ? `It has ${shots} attachment(s).` : '',
     '',
     'Make the change in this folder, keeping it focused on this comment.',
-    `When it's done, run: gc fix ${c.id} "<what you changed and where: files, pages, URLs — so the owner can check it in seconds>"`,
-    `If the comment is unclear or you're blocked, don't guess: run gc note ${c.id} "<what you need>" and stop.`,
+    `When it's done, call the GoodComments mark_fixed tool with id ${c.id} and a note: what you changed and where (files, pages, URLs), so the owner can check it in seconds.`,
+    `If the comment is unclear or you're blocked, don't guess: call add_note with id ${c.id} saying what you need, and stop.`,
+    `(get_comment ${c.id} shows its history and screenshots.)`,
     'Never mark a comment done and never delete comments.',
   ].filter((l, i, a) => l || a[i - 1]).join('\n');
 }
@@ -121,13 +127,19 @@ export function startAgent(c, project, { port, logDir, onEnd }) {
   const tools = process.env.GOODCOMMENTS_AGENT_TOOLS || TOOLS;
   writeSync(fd, `\n=== ${new Date().toISOString()} · claude -p in ${project.path}\n--- task\n${task}\n--- output\n`);
 
-  const child = spawn(claude, ['-p', task, '--allowedTools', tools, '--permission-mode', 'acceptEdits'], {
+  // its own GoodComments MCP server, pointed at this board (never the one in your user settings)
+  const url = `http://127.0.0.1:${port}`;
+  const mcp = JSON.stringify({ mcpServers: { goodcomments: {
+    command: process.execPath, args: ['--no-warnings', join(ROOT, 'bin/gc.js'), 'mcp'],
+    env: { GOODCOMMENTS_URL: url, GOODCOMMENTS_ACTOR: 'claude', ...(process.env.GOODCOMMENTS_TOKEN ? { GOODCOMMENTS_TOKEN: process.env.GOODCOMMENTS_TOKEN } : {}) },
+  } } });
+  const child = spawn(claude, ['-p', task, '--allowedTools', tools, '--permission-mode', 'acceptEdits', '--strict-mcp-config', '--mcp-config', mcp], {
     cwd: project.path,
     stdio: ['ignore', fd, fd],
     env: {
       ...cleanEnv(),
       PATH: `${binDir}${delimiter}${process.env.PATH || ''}`,
-      GOODCOMMENTS_URL: `http://127.0.0.1:${port}`,
+      GOODCOMMENTS_URL: url,
       GOODCOMMENTS_ACTOR: 'claude',
     },
   });
