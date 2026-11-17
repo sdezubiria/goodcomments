@@ -135,8 +135,11 @@ function normPath(p) {
 
 const SELECT = `
   select c.*, p.name as project_name, p.color as project_color,
-    (select json_group_array(json_object('id', a.id, 'name', a.name, 'type', a.type, 'size', a.size))
-       from attachments a where a.comment_id = c.id) as attachments
+    (select json_group_array(json_object('id', a.id, 'name', a.name, 'type', a.type, 'size', a.size, 'created_at', a.created_at))
+       from attachments a where a.comment_id = c.id) as attachments,
+    (select e.note from events e where e.comment_id = c.id and e.type = 'reopened' order by e.id desc limit 1) as reopen_note,
+    (select e.at from events e where e.comment_id = c.id and e.type = 'reopened' order by e.id desc limit 1) as reopened_at,
+    (select e.actor from events e where e.comment_id = c.id and e.type = 'reopened' order by e.id desc limit 1) as reopened_by
   from comments c left join projects p on p.id = c.project_id`;
 
 const withAttachments = (c) => c && { ...c, attachments: JSON.parse(c.attachments || '[]') };

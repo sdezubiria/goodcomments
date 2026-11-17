@@ -1,3 +1,4 @@
+import * as pile from './pile.js';
 const $ = (s, el = document) => el.querySelector(s);
 const params = new URLSearchParams(location.search);
 if (params.has('embed')) document.documentElement.classList.add('embed');
@@ -22,6 +23,7 @@ const state = {
   allDone: false,        // show every done comment, not just the latest
   seen: new Set(),       // cards already on screen: they don't replay their entrance
   moving: false,         // a card is mid-fall: hold re-renders until it lands
+  askFiles: [],          // screenshots waiting in the open fix / reopen box
 };
 state.skin = SKINS.includes(params.get('skin')) ? params.get('skin') : SKINS.includes(store.get('skin')) ? store.get('skin') : 'trunk';
 document.documentElement.dataset.skin = state.skin;
@@ -72,6 +74,27 @@ async function uploadFiles(id, files) {
       body: f,
     }).catch((e) => toast(`${f.name}: ${e.message}`));
   }
+}
+
+function clearAskFiles() {
+  state.askFiles.forEach((f) => f.url && URL.revokeObjectURL(f.url));
+  state.askFiles = [];
+}
+
+/** Add screenshots to the open fix / reopen box (paste, drop or paperclip). */
+async function addAskFiles(list) {
+  if (!state.asking) return 0;
+  const files = (await Promise.all(imageFiles(list).map(prepareFile))).filter(Boolean);
+  for (const f of files) state.askFiles.push(Object.assign(f, { url: f.type.startsWith('image/') ? URL.createObjectURL(f) : null }));
+  if (files.length) {
+    const input = $(`#ask-${state.asking.id} input:not([type=file])`);
+    const text = input?.value;
+    input?.blur();
+    render();
+    const again = $(`#ask-${state.asking.id} input:not([type=file])`);
+    if (again) { again.value = text || ''; again.focus(); }
+  }
+  return files.length;
 }
 
 const imageFiles = (list) => [...(list || [])].filter((f) => /^image\/|application\/pdf/.test(f.type));
@@ -166,6 +189,7 @@ function render() {
   } else {
   const list = state.comments.filter((c) => c.status === state.status);
   patchItems(list.map((c, i) => renderItem(c, i)).join(''));
+  pile.attach(null);
   const empty = $('#empty');
   empty.hidden = list.length > 0;
   if (!list.length) {
@@ -217,18 +241,19 @@ function renderBoard() {
 
   const newest = state.moved?.status === 'done' ? state.moved.id : null;
   const heap = done.slice(0, 60).map((c) =>
-    `<i class="${c.id === newest ? 'new' : ''}" style="--pc:${esc(c.project_color || 'var(--ink-3)')};--r:${tilt(c.id)}deg;--n:${tilt(c.id)}" title="#${c.id} ${esc(c.body.slice(0, 60))}"></i>`).join('');
-  const pile = state.skin === 'trunk'
-    ? `<button class="pile" data-act="toggle-done" style="--fill:${pct};--heap-w:${Math.max(3, Math.ceil(Math.sqrt(done.length) * 1.3)) * 24}px" title="${pct}% of this view is done">
-         <span class="heap">${heap}</span><span class="ground"></span>
-         <span class="pile-label">${done.length} done · ${pct}%</span></button>`
+    `<i data-key="c${c.id}" class="${c.id === newest ? 'new' : ''}" style="--pc:${esc(c.project_color || 'var(--ink-3)')};--r:${tilt(c.id)}deg;--n:${tilt(c.id)}" title="#${c.id} ${esc(c.body.slice(0, 60))}"></i>`).join('');
+  const pileHtml = state.skin === 'trunk'
+    ? `<div class="pile" data-act="toggle-done" style="--fill:${pct}" title="Drag the monkeys around · click empty space to list what's done">
+         <span class="heap physics">${heap}</span><span class="ground"></span>
+         <span class="pile-label">${done.length} done · ${pct}%</span></div>`
     : `<button class="spike" data-act="toggle-done" title="${done.length} tickets spiked">
          <span class="needle"></span><span class="stack">${heap}</span>
          <span class="pile-label">${done.length} spiked · ${pct}%</span></button>`;
   const doneShown = state.allDone ? done : [];
-  const doneZone = zone('done', doneShown, pile, done.length).replace('</ol>', `</ol>${done.length ? `<button class="act show-done" data-act="toggle-done">${state.allDone ? 'Hide done' : `Show ${done.length} done`}</button>` : ''}`);
+  const doneZone = zone('done', doneShown, pileHtml, done.length).replace('</ol>', `</ol>${done.length ? `<button class="act show-done" data-act="toggle-done">${state.allDone ? 'Hide done' : `Show ${done.length} done`}</button>` : ''}`);
 
   patchItems(zone('open', open) + zone('fixed', fixed) + doneZone);
+  pile.attach($('.pile .heap.physics'));
   $('#empty').hidden = true;
 }
 
@@ -270,8 +295,16 @@ function patchItems(html) {
     prev.style.setProperty('--i', el.style.getPropertyValue('--i'));
     el.replaceWith(prev);
   }
+  const liveHeap = box.querySelector('.heap.physics');
+  const nextHeap = tpl.content.querySelector('.heap.physics');
+  if (liveHeap && nextHeap) { pile.syncHeap(liveHeap, nextHeap); nextHeap.replaceWith(liveHeap); }
   box.replaceChildren(...tpl.content.childNodes);
 }
+
+const shotHtml = (a) => a.type.startsWith('image/')
+  ? `<a class="shot" href="${withToken(`/api/attachments/${a.id}`)}" target="_blank" title="${esc(a.name)}"><img src="${withToken(`/api/attachments/${a.id}`)}" alt="${esc(a.name)}" loading="lazy"><button class="x" data-detach="${a.id}" title="Remove">✕</button></a>`
+  : `<a class="shot pdf" href="${withToken(`/api/attachments/${a.id}`)}" target="_blank">${esc(a.name)}<button class="x" data-detach="${a.id}" title="Remove">✕</button></a>`;
+const paperclip = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10.5 4.5L5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2"/></svg>';
 
 function renderItem(c, i) {
   const d = state.details.get(c.id);
@@ -285,14 +318,26 @@ function renderItem(c, i) {
     done: `<button class="act" data-act="ask-reopen">${icons.undo}Reopen</button>`,
   }[c.status];
 
+  const atts = c.attachments || [];
+  const reopenedNow = c.status === 'open' && c.reopened_at;
+  const reopenShots = reopenedNow ? atts.filter((a) => a.created_at >= c.reopened_at) : [];
+  const fixShots = c.fix_note && c.status !== 'open' && c.fixed_at ? atts.filter((a) => a.created_at >= c.fixed_at) : [];
+  const otherShots = atts.filter((a) => !reopenShots.includes(a) && !fixShots.includes(a));
   const fix = c.fix_note ? `
-    <div class="fix"><span class="who">Fixed${c.fixed_by ? ` by ${esc(c.fixed_by)}` : ''} · ${ago(c.fixed_at)}</span>${esc(c.fix_note)}</div>` : '';
+    <div class="fix"><span class="who">Fixed${c.fixed_by ? ` by ${esc(c.fixed_by)}` : ''} · ${ago(c.fixed_at)}</span>${esc(c.fix_note)}
+      ${fixShots.length ? `<div class="shots">${fixShots.map(shotHtml).join('')}</div>` : ''}</div>` : '';
+  const reopened = reopenedNow && (c.reopen_note || reopenShots.length) ? `
+    <div class="reopened"><span class="who">↩ Reopened${c.reopened_by ? ` by ${esc(c.reopened_by)}` : ''} · ${ago(c.reopened_at)}</span>${c.reopen_note ? `<span class="note">${esc(c.reopen_note)}</span>` : ''}
+      ${reopenShots.length ? `<div class="shots">${reopenShots.map(shotHtml).join('')}</div>` : ''}</div>` : '';
 
   const ask = asking ? `
-    <form class="ask" id="ask-${c.id}" data-kind="${asking}" novalidate>
-      <input placeholder="${asking === 'fix' ? 'What did you change?' : 'What’s still wrong? (optional)'}">
-      <button class="act ${asking === 'fix' ? 'fixit' : ''}">${asking === 'fix' ? 'Fixed' : 'Reopen'}</button>
+    <form class="ask ${asking}" id="ask-${c.id}" data-kind="${asking}" novalidate>
+      <input placeholder="${asking === 'fix' ? 'What did you change?' : 'What’s still wrong?'}">
+      <label class="act icon ask-clip" title="Attach screenshots (or paste ⌘V / drop them here)"><input type="file" accept="image/*,application/pdf" multiple hidden data-ask-file>${paperclip}</label>
+      <button class="act ${asking === 'fix' ? 'fixit' : 'reopen'}">${asking === 'fix' ? 'Fixed' : 'Reopen'}</button>
       <button type="button" class="act icon" data-act="cancel-ask" title="Cancel">✕</button>
+      <div class="ask-files${state.askFiles.length ? ' has' : ''}">${state.askFiles.map((f, k) => `<span class="file" style="${f.url ? `background-image:url(${f.url})` : ''}">${f.url ? '' : 'PDF'}<button type="button" data-ask-rm="${k}" title="Remove">✕</button></span>`).join('')}
+        <span class="ask-hint">${state.askFiles.length ? '' : 'Paste or drop screenshots here'}</span></div>
     </form>` : '';
 
   const history = expanded && d ? `
@@ -303,15 +348,16 @@ function renderItem(c, i) {
       <form class="note-form" data-note="${c.id}"><input placeholder="Add a note…"><button class="act">Note</button></form>
     </div>` : '';
 
-  const sig = hash(JSON.stringify([c, expanded, asking, d?.events?.length ?? -1, state.skin]));
+  const sig = hash(JSON.stringify([c, expanded, asking, d?.events?.length ?? -1, state.skin, asking ? state.askFiles.map((f) => f.name + f.size) : 0]));
   return `
     <li data-sig="${sig}" class="item status-${c.status}${expanded ? ' expanded' : ''}${state.seen.has(c.id) ? '' : ' fresh'}${state.moved?.id === c.id ? ` arrived-${c.status}` : ''}" data-id="${c.id}" style="--i:${Math.min(i, 12)};--pc:${esc(c.project_color || 'var(--ink-3)')};--tw:${(tilt(c.id, 4) * tiltScale()).toFixed(2)}deg">
       <span class="pin" aria-hidden="true"></span>
       <span class="peg" aria-hidden="true"><i></i><i></i>
-      <svg class="monkey" viewBox="0 0 64 54" aria-hidden="true">
+      <svg class="monkey" viewBox="0 0 64 54" role="img" aria-label="Monkey">
         <path class="arm" d="M21 33 C 15 25, 14 18, 17 11"/>
         <path class="arm a2" d="M43 33 C 49 25, 50 18, 47 11"/>
         <path class="arm a2-down" d="M43 33 C 50 38, 54 44, 56 50"/>
+        <g class="wave-arm"><path class="arm" d="M43 33 C 50 28, 55 22, 57 15"/><circle class="hand" cx="57.5" cy="13.5" r="3.6"/></g>
         <circle class="hand" cx="17" cy="10" r="3.6"/><circle class="hand a2" cx="47" cy="10" r="3.6"/><circle class="hand a2-down" cx="56" cy="50" r="3.4"/>
         <circle class="fur" cx="19" cy="30" r="5.5"/><circle class="fur" cx="45" cy="30" r="5.5"/>
         <circle class="face" cx="19" cy="30" r="2.8"/><circle class="face" cx="45" cy="30" r="2.8"/>
@@ -320,6 +366,7 @@ function renderItem(c, i) {
         <ellipse class="face" cx="32" cy="36" rx="8.2" ry="6.4"/>
         <circle class="eye" cx="28.6" cy="30" r="1.5"/><circle class="eye" cx="35.4" cy="30" r="1.5"/>
         <path class="mouth" d="M28.5 38.2 Q32 40.8 35.5 38.2"/>
+        <ellipse class="mouth-o" cx="32" cy="38.6" rx="1.9" ry="2.3"/>
       </svg></span>
       <article class="sheet">
         <div class="meta">
@@ -330,10 +377,9 @@ function renderItem(c, i) {
         </div>
         <div class="body">${esc(c.body)}</div>
         ${c.location ? (isUrl(c.location) ? `<a class="where" href="${esc(c.location)}" target="_blank" rel="noopener">${esc(c.location)}</a>` : `<span class="where">${esc(c.location)}</span>`) : ''}
-        ${c.attachments?.length ? `<div class="shots">${c.attachments.map((a) => a.type.startsWith('image/')
-          ? `<a class="shot" href="${withToken(`/api/attachments/${a.id}`)}" target="_blank" title="${esc(a.name)}"><img src="${withToken(`/api/attachments/${a.id}`)}" alt="${esc(a.name)}" loading="lazy"><button class="x" data-detach="${a.id}" title="Remove">✕</button></a>`
-          : `<a class="shot pdf" href="${withToken(`/api/attachments/${a.id}`)}" target="_blank">${esc(a.name)}<button class="x" data-detach="${a.id}" title="Remove">✕</button></a>`).join('')}</div>` : ''}
-        ${fix}
+        ${otherShots.length ? `<div class="shots">${otherShots.map(shotHtml).join('')}</div>` : ''}
+        ${reopened}
+        ${c.status === 'open' ? '' : fix}
         ${ask || `<div class="actions">${actions}<span class="spacer"></span>
           <button class="act icon" data-act="copy" title="Copy for an agent">${icons.copy}</button>
           <button class="act icon" data-act="delete" title="Delete">${icons.trash}</button></div>`}
@@ -411,9 +457,13 @@ async function boardMove(li, id, status, note, { remote = false } = {}) {
   if (realCard) {
     realCard.classList.add(rail ? 'landed-rail' : 'landed');
   } else {
-    landing.classList.add('landed');
-    $('.pile, .spike')?.classList.add('thud');
-    setTimeout(() => $('.pile, .spike')?.classList.remove('thud'), 450);
+    if (rail) {
+      landing.classList.add('landed');
+      $('.spike')?.classList.add('thud');
+      setTimeout(() => $('.spike')?.classList.remove('thud'), 450);
+    } else {
+      pile.release(landing);
+    }
   }
   if (remote) toast({ fixed: `#${id} was marked fixed`, done: `#${id} was approved`, open: `#${id} was reopened` }[status]);
   else if (!quietToast) toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
@@ -488,6 +538,123 @@ function fallInto(ghost, from, to, rail) {
     };
   }), { duration: Math.min(1000, 320 + Math.sqrt(Math.abs(dy)) * 28) * SLOW, fill: 'forwards' });
 }
+
+// ---------- easter eggs: poke the monkeys ----------
+const OOK = ['Ook!', 'Eek!', 'Ook ook?', '🍌?', 'Ship it!', 'Who wrote this?', 'Is it Friday?', 'Hang in there.', 'Fixed? Fixed.',
+  'I only work for bananas.', 'Have you tried turning it off and on?', 'Works on my branch.', '*scratches head*', 'Mark me fixed!'];
+const TRICKS = ['swing', 'wave', 'blink', 'loop', 'surprise'];
+const pokes = new WeakMap();     // monkey → recent click times
+let barrel = [];                 // recent pokes on different monkeys
+let lastTrick = '';
+
+/** A speech bubble next to whatever was poked, drawn above everything else. */
+function say(anchor, text) {
+  document.querySelector('.ook')?.remove();
+  const r = anchor.getBoundingClientRect();
+  const b = document.createElement('span');
+  b.className = 'ook';
+  b.textContent = text;
+  document.body.appendChild(b);
+  const room = innerWidth - 8 - b.offsetWidth;
+  Object.assign(b.style, { left: `${Math.max(8, Math.min(r.right - 8, room))}px`, top: `${Math.max(8, r.top - b.offsetHeight + 6)}px` });
+  setTimeout(() => b.remove(), 1700);
+}
+
+function trick(monkey, name) {
+  monkey.classList.remove(...TRICKS.map((t) => `do-${t}`));
+  void monkey.getBBox();                                   // restart the animation
+  monkey.classList.add(`do-${name}`);
+  clearTimeout(monkey._t);
+  monkey._t = setTimeout(() => monkey.classList.remove(`do-${name}`), 1600);
+}
+
+function poke(monkey) {
+  const now = Date.now();
+  const times = (pokes.get(monkey) || []).filter((t) => now - t < 2500);
+  times.push(now);
+  pokes.set(monkey, times);
+
+  // five quick pokes on the same monkey: it gives up its banana
+  if (times.length >= 5) {
+    pokes.set(monkey, []);
+    trick(monkey, 'surprise');
+    say(monkey, 'FINE. Take it.');
+    return dropBanana(monkey);
+  }
+  if (times.length === 3) { trick(monkey, 'surprise'); return say(monkey, 'Hey!'); }
+  if (times.length === 4) { trick(monkey, 'blink'); return say(monkey, 'Stop it…'); }
+
+  // poke seven different monkeys quickly: barrel of monkeys
+  barrel = barrel.filter((b) => now - b.t < 6000 && b.m !== monkey && b.m.isConnected);
+  barrel.push({ m: monkey, t: now });
+  if (barrel.length >= Math.min(7, document.querySelectorAll('#items .monkey').length) && barrel.length >= 3) {
+    barrel = [];
+    return barrelOfMonkeys();
+  }
+
+  let name;
+  do { name = TRICKS[Math.floor(Math.random() * TRICKS.length)]; } while (name === lastTrick);
+  lastTrick = name;
+  trick(monkey, name);
+  say(monkey, OOK[Math.floor(Math.random() * OOK.length)]);
+}
+
+/** Every monkey on the trunk does a loop around its stick, one after the other. */
+function barrelOfMonkeys() {
+  const all = [...document.querySelectorAll('#items .monkey')];
+  all.forEach((m, k) => setTimeout(() => trick(m, k % 2 ? 'loop' : 'wave'), k * 110));
+  toast('🐒 Barrel of monkeys!');
+}
+
+/** The banana falls off the stick and lands on the pile (and stays there for the session). */
+function dropBanana(monkey) {
+  const from = monkey.getBoundingClientRect();
+  const pileEl = $('.pile .heap') || $('.pile');
+  const b = document.createElement('span');
+  b.className = 'banana falling';
+  b.textContent = '🍌';
+  Object.assign(b.style, { left: `${from.left + from.width / 2 - 10}px`, top: `${from.top + 10}px` });
+  document.body.appendChild(b);
+  if (!pileEl) { setTimeout(() => b.remove(), 900); return; }
+  const to = pileEl.getBoundingClientRect();
+  const dx = to.left + to.width / 2 + (Math.random() * 60 - 30) - (from.left + from.width / 2);
+  const dy = Math.max(40, to.top + 4 - (from.top + 10));
+  b.animate(sampled(16, (t) => ({ transform: `translate(${dx * t}px, ${dy * t * t}px) rotate(${540 * t}deg)` })),
+    { duration: Math.min(1100, 300 + Math.sqrt(dy) * 30) * SLOW, fill: 'forwards' })
+    .finished.then(() => {
+      b.remove();
+      state.bananas = (state.bananas || 0) + 1;
+      pile.addBanana(from.left + from.width / 2 + dx);
+      if (state.bananas === 3) toast('🍌🍌🍌 That’s a lot of bananas.');
+    });
+}
+
+/** Poke a head on the pile: it jumps. Three quick pokes: the whole pile jumps. */
+let headPokes = [];
+pile.onPoke((head) => {
+  const now = Date.now();
+  headPokes = headPokes.filter((t) => now - t < 1500);
+  headPokes.push(now);
+  if (headPokes.length >= 3) {
+    headPokes = [];
+    pile.kick(null, 1.2);
+    return say(head, '🎉 Ook ook ook!');
+  }
+  pile.kick(head);
+  say(head, head.classList.contains('banana') ? '🍌' : ['ook', 'zzz', 'eek', '…', 'wheee'][Math.floor(Math.random() * 5)]);
+});
+
+// type "ook" anywhere (outside a text field): every monkey waves back
+let typed = '';
+document.addEventListener('keydown', (ev) => {
+  if (isEditable(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey || ev.key.length !== 1) return;
+  typed = (typed + ev.key.toLowerCase()).slice(-3);
+  if (typed === 'ook' && state.skin === 'trunk') {
+    document.querySelectorAll('#items .monkey').forEach((m, k) => setTimeout(() => trick(m, 'wave'), k * 80));
+    const first = $('#items .monkey');
+    if (first) say(first, 'Ook!');
+  }
+});
 
 /** Let renders through again once the landing swing is over. */
 function settle(after) {
@@ -565,7 +732,14 @@ window.gcUndo = (redoing) => {
   return 'handled';
 };
 
+$('#items').addEventListener('mousedown', (ev) => {
+  if (ev.target.closest('.monkey, .pile')) ev.preventDefault();   // no text selection or focus box on quick clicks
+});
+
 $('#items').addEventListener('click', async (ev) => {
+  const monkey = ev.target.closest('.monkey');
+  if (monkey) return poke(monkey);
+  if (ev.target.closest('.heap [data-key]') || pile.recentlyTouched()) return;
   if (ev.target.closest('[data-act="toggle-done"]')) { state.allDone = !state.allDone; return render(); }
   const li = ev.target.closest('.item');
   if (!li) return;
@@ -581,8 +755,21 @@ $('#items').addEventListener('click', async (ev) => {
   const act = ev.target.closest('[data-act]')?.dataset.act;
   const c = state.comments.find((x) => x.id === id);
 
-  if (act === 'ask-fix' || act === 'ask-reopen') { state.asking = { id, kind: act.slice(4) }; return render(); }
-  if (act === 'cancel-ask') { state.asking = null; return render(); }
+  // (blur first: Safari keeps focus in the text field when a button is clicked, which would hold the re-render)
+  if (act === 'ask-fix' || act === 'ask-reopen') { document.activeElement?.blur(); clearAskFiles(); state.asking = { id, kind: act.slice(4) }; return render(); }
+  if (act === 'cancel-ask') { document.activeElement?.blur(); clearAskFiles(); state.asking = null; return render(); }
+  const askRm = ev.target.closest('[data-ask-rm]')?.dataset.askRm;
+  if (askRm !== undefined) {
+    ev.preventDefault();
+    const [f] = state.askFiles.splice(Number(askRm), 1);
+    if (f?.url) URL.revokeObjectURL(f.url);
+    const text = $(`#ask-${id} input:not([type=file])`)?.value || '';
+    document.activeElement?.blur();
+    render();
+    const again = $(`#ask-${id} input:not([type=file])`);
+    if (again) again.value = text;
+    return $(`#ask-${id} input:not([type=file])`)?.focus();
+  }
   if (act === 'done') return changeStatus(id, 'done');
   if (act === 'copy') {
     const text = `GoodComments #${c.id} (${c.project_id || 'no project'}): ${c.body}${c.location ? `\nWhere: ${c.location}` : ''}\nWhen it's fixed, run: gc fix ${c.id} "what you changed"  (or MCP tool mark_fixed)`;
@@ -606,10 +793,10 @@ $('#items').addEventListener('click', async (ev) => {
 $('#items').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const form = ev.target;
-  const value = form.querySelector('input').value.trim();
+  const value = form.querySelector('input:not([type=file])').value.trim();
   if (form.classList.contains('ask')) {
     const id = Number(form.id.slice(4));
-    const input = form.querySelector('input');
+    const input = form.querySelector('input:not([type=file])');
     if (form.dataset.kind === 'fix' && !value) {
       // a fix needs a note, so whoever checks it knows what to look at
       input.classList.remove('invalid');
@@ -620,7 +807,17 @@ $('#items').addEventListener('submit', async (ev) => {
       return;
     }
     input.blur();
-    return changeStatus(id, form.dataset.kind === 'fix' ? 'fixed' : 'open', value);
+    const files = state.askFiles.slice();
+    const status = form.dataset.kind === 'fix' ? 'fixed' : 'open';
+    const note = value || (files.length && status === 'open' ? 'See screenshot' : value);
+    state.askFiles = [];
+    const ok = await changeStatus(id, status, note);
+    if (ok && files.length) {
+      await uploadFiles(id, files);
+      files.forEach((f) => f.url && URL.revokeObjectURL(f.url));
+      await load();
+    } else if (!ok) state.askFiles = files;
+    return;
   }
   if (form.dataset.note && value) {
     form.querySelector('input').blur();
@@ -629,8 +826,14 @@ $('#items').addEventListener('submit', async (ev) => {
   }
 });
 
+$('#items').addEventListener('change', (ev) => {
+  if (!ev.target.matches('[data-ask-file]')) return;
+  addAskFiles(ev.target.files);
+  ev.target.value = '';
+});
+
 $('#items').addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape' && state.asking) { state.asking = null; document.activeElement.blur(); render(); }
+  if (ev.key === 'Escape' && state.asking) { clearAskFiles(); state.asking = null; document.activeElement.blur(); render(); }
 });
 $('#line').addEventListener('focusout', () => setTimeout(() => state.pending && render(), 0));
 
@@ -692,6 +895,7 @@ $('#items').addEventListener('drop', async (ev) => {
   if (!li) return;
   ev.preventDefault();
   li.classList.remove('dragging');
+  if (state.asking && Number(li.dataset.id) === state.asking.id) return addAskFiles(ev.dataTransfer.files);
   const files = (await Promise.all(imageFiles(ev.dataTransfer.files).map(prepareFile))).filter(Boolean);
   if (!files.length) return toast('Only images and PDFs');
   await uploadFiles(li.dataset.id, files);
@@ -737,6 +941,10 @@ document.addEventListener('paste', async (ev) => {
   const files = clipboardFiles(ev.clipboardData);
   if (!files.length) return;
   ev.preventDefault();
+  if (state.asking && !composer.contains(document.activeElement)) {
+    if (await addAskFiles(files)) toast('Screenshot added');
+    return;
+  }
   const expanded = [...state.expanded];
   if (expanded.length === 1 && !composer.contains(document.activeElement)) {
     const ready = (await Promise.all(files.map(prepareFile))).filter(Boolean);

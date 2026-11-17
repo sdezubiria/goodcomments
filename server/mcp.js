@@ -11,7 +11,8 @@ const INSTRUCTIONS = `GoodComments tracks feedback on projects. Each comment mov
 - Never mark comments done: the owner verifies fixed comments and closes them.
 - If a comment is unclear or blocked, use add_note instead of guessing.
 - When you notice a problem you won't fix now, record it with add_comment.
-- Comments may have screenshots: get_comment returns them as images.`;
+- Comments may have screenshots: get_comment returns them as images.
+- A comment that was reopened says why (REOPENED: …) and may include new screenshots: fix what the note and screenshots describe.`;
 
 const projectProp = { type: 'string', description: 'Project id or name. Omit to use the project whose folder contains the current directory.' };
 
@@ -55,7 +56,8 @@ const tools = [
     run: async ({ id }) => {
       const c = await api('GET', `/api/comments/${id}`);
       const content = [{ type: 'text', text: formatComment(c, { full: true }) }];
-      for (const a of c.attachments.filter((x) => /^image\/(png|jpeg|gif|webp)$/.test(x.type)).slice(0, 4)) {
+      // newest first: after a reopen, the screenshots of what's still wrong come first
+      for (const a of c.attachments.filter((x) => /^image\/(png|jpeg|gif|webp)$/.test(x.type)).sort((x, y) => y.id - x.id).slice(0, 4)) {
         const data = await fetchAttachment(a.id).catch(() => null);
         if (data && data.length < 5e6) content.push({ type: 'image', data: data.toString('base64'), mimeType: a.type });
       }

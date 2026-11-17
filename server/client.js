@@ -100,6 +100,10 @@ export function formatComment(c, { full = false } = {}) {
   if (c.location) lines.push(`  where: ${c.location}`);
   if (c.attachments?.length) lines.push(`  attachments: ${c.attachments.map((a) => `${a.name} (${attachmentUrl(a)})`).join(', ')}`);
   if (c.fix_note) lines.push(`  fix (${c.fixed_by || 'someone'}, ${ago(c.fixed_at)}): ${c.fix_note}`);
+  if (c.status === 'open' && c.reopened_at) {
+    const shots = (c.attachments || []).filter((a) => a.created_at >= c.reopened_at);
+    lines.push(`  REOPENED (${c.reopened_by || 'someone'}, ${ago(c.reopened_at)}): ${c.reopen_note || 'no note'}${shots.length ? ` — see ${shots.map((a) => a.name).join(', ')}` : ''}`);
+  }
   if (full && c.events?.length) {
     lines.push('  history:');
     for (const e of c.events) lines.push(`    ${ago(e.at)} ${e.type}${e.actor ? ` by ${e.actor}` : ''}${e.note ? `: ${e.note}` : ''}`);
