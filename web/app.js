@@ -20,6 +20,8 @@ const state = {
   skin: 'trunk',         // trunk | rail | line (set below)
   moved: null,           // { id, status } — the piece that just changed state, to animate its arrival
   allDone: false,        // show every done comment, not just the latest
+  seen: new Set(),       // cards already on screen: they don't replay their entrance
+  moving: false,         // a card is mid-fall: hold re-renders until it lands
 };
 state.skin = SKINS.includes(params.get('skin')) ? params.get('skin') : SKINS.includes(store.get('skin')) ? store.get('skin') : 'trunk';
 document.documentElement.dataset.skin = state.skin;
@@ -141,6 +143,7 @@ function toast(msg) {
 
 // ---------- render ----------
 function render() {
+  if (state.moving) { state.pending = true; return; }
   // keep the line still while you're typing in it
   if ($('#line').contains(document.activeElement) && document.activeElement.matches('input')) { state.pending = true; return; }
   state.pending = false;
@@ -162,7 +165,7 @@ function render() {
     renderBoard();
   } else {
   const list = state.comments.filter((c) => c.status === state.status);
-  $('#items').innerHTML = list.map((c, i) => renderItem(c, i)).join('');
+  patchItems(list.map((c, i) => renderItem(c, i)).join(''));
   const empty = $('#empty');
   empty.hidden = list.length > 0;
   if (!list.length) {
@@ -174,6 +177,7 @@ function render() {
   }
   }
   state.moved = null;
+  for (const c of state.comments) state.seen.add(c.id);
   $('.rope').style.setProperty('--rope-h', $('#items').scrollHeight + 60 + 'px');
 
   if (state.asking) $(`#ask-${state.asking.id} input`)?.focus();
@@ -192,6 +196,8 @@ const ZONES = {
     done: ['The spike', 'Approved tickets get spiked.'],
   },
 };
+// resting tilt shrinks on wide panels, so the far edge never sags more than a few pixels
+const tiltScale = () => Math.min(1, 380 / ($('#line')?.clientWidth || 380));
 const tilt = (id, span = 18) => ((id * 47) % (span + 1)) - span / 2;
 
 function renderBoard() {
@@ -222,7 +228,7 @@ function renderBoard() {
   const doneShown = state.allDone ? done : [];
   const doneZone = zone('done', doneShown, pile, done.length).replace('</ol>', `</ol>${done.length ? `<button class="act show-done" data-act="toggle-done">${state.allDone ? 'Hide done' : `Show ${done.length} done`}</button>` : ''}`);
 
-  $('#items').innerHTML = zone('open', open) + zone('fixed', fixed) + doneZone;
+  patchItems(zone('open', open) + zone('fixed', fixed) + doneZone);
   $('#empty').hidden = true;
 }
 
@@ -242,6 +248,29 @@ function renderProjects() {
   const keep = sel.value || state.project || store.get('lastProject', '');
   sel.innerHTML = '<option value="">No project</option>' + state.projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   sel.value = state.projects.some((p) => p.id === keep) ? keep : '';
+}
+
+const hash = (str) => { let h = 5381; for (let k = 0; k < str.length; k++) h = ((h << 5) + h + str.charCodeAt(k)) | 0; return (h >>> 0).toString(36); };
+const TRANSIENT = ['fresh', 'landed', 'landed-rail', 'leaving', 'pulling', 'arrived-open', 'arrived-fixed', 'arrived-done', 'to-open', 'to-fixed', 'to-done', 'dragging'];
+
+/**
+ * Update the list without rebuilding cards that didn't change: they keep their
+ * DOM node, so images don't reload and nothing re-animates or flashes.
+ */
+function patchItems(html) {
+  const box = $('#items');
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const old = new Map([...box.querySelectorAll('.item[data-id]')].map((el) => [el.dataset.id, el]));
+  for (const el of tpl.content.querySelectorAll('.item[data-id]')) {
+    const prev = old.get(el.dataset.id);
+    if (!prev || prev.dataset.sig !== el.dataset.sig) continue;
+    prev.classList.remove(...TRANSIENT);
+    prev.style.visibility = '';
+    prev.style.setProperty('--i', el.style.getPropertyValue('--i'));
+    el.replaceWith(prev);
+  }
+  box.replaceChildren(...tpl.content.childNodes);
 }
 
 function renderItem(c, i) {
@@ -274,8 +303,9 @@ function renderItem(c, i) {
       <form class="note-form" data-note="${c.id}"><input placeholder="Add a note…"><button class="act">Note</button></form>
     </div>` : '';
 
+  const sig = hash(JSON.stringify([c, expanded, asking, d?.events?.length ?? -1, state.skin]));
   return `
-    <li class="item status-${c.status}${expanded ? ' expanded' : ''}${state.moved?.id === c.id ? ` arrived-${c.status}` : ''}" data-id="${c.id}" style="--i:${Math.min(i, 12)};--pc:${esc(c.project_color || 'var(--ink-3)')};--tw:${tilt(c.id, 4)}deg">
+    <li data-sig="${sig}" class="item status-${c.status}${expanded ? ' expanded' : ''}${state.seen.has(c.id) ? '' : ' fresh'}${state.moved?.id === c.id ? ` arrived-${c.status}` : ''}" data-id="${c.id}" style="--i:${Math.min(i, 12)};--pc:${esc(c.project_color || 'var(--ink-3)')};--tw:${(tilt(c.id, 4) * tiltScale()).toFixed(2)}deg">
       <span class="pin" aria-hidden="true"></span>
       <span class="peg" aria-hidden="true"><i></i><i></i>
       <svg class="monkey" viewBox="0 0 64 54" aria-hidden="true">
@@ -313,18 +343,227 @@ function renderItem(c, i) {
 }
 
 // ---------- actions ----------
-async function changeStatus(id, status, note) {
-  const li = $(`.item[data-id="${id}"]`);
-  li?.classList.add('leaving', `to-${status}`);
-  try {
-    await api('POST', `/api/comments/${id}/status`, { status, note: note || undefined });
-    state.asking = null;
-    state.moved = { id, status };
-    await new Promise((r) => setTimeout(r, board() ? 420 : 300));
-    toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
-    await load();
-  } catch (e) { li?.classList.remove('leaving'); toast(e.message); }
+const SLOW = Math.max(1, Number(params.get('slowmo')) || 1);   // ?slowmo=5 to inspect the motion
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms * SLOW));
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Trunk / rail: the card leaves from where it is and lands where it belongs.
+ * 1. pull: the stick slides back into the trunk (or the clip opens)
+ * 2. fall: a copy of the card drops under gravity to its new spot
+ *    (done → it tumbles and shrinks into its monkey head / ticket on the pile)
+ * 3. land: the real card appears and swings on its new stick; the pile bounces
+ */
+async function boardMove(li, id, status, note, { remote = false } = {}) {
+  const line = $('#line');
+  state.moving = true;            // live updates wait: the card must stay put while we measure it
+  li.classList.add('pulling');
+  // remote: someone else (an agent, the CLI) already made the change; we only show it
+  const request = remote ? null : api('POST', `/api/comments/${id}/status`, { status, note: note || undefined });
+  try { await Promise.all([request, sleep(220)]); }
+  catch (e) { li.classList.remove('pulling'); settle(0); toast(e.message); return false; }
+
+  // the falling copy, pinned where the card is now
+  const from = li.getBoundingClientRect();
+  const ghost = li.cloneNode(true);
+  ghost.classList.add('faller');
+  ghost.classList.remove('pulling', 'fresh', 'expanded');
+  ghost.querySelector('.detail')?.remove();
+  Object.assign(ghost.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px` });
+  document.body.appendChild(ghost);
+
+  state.asking = null;
+  state.moved = { id, status };
+  state.seen.add(id);
+
+  // remember where everything else is, so it can glide into place instead of jumping
+  const before = snapshot();
+  state.moving = false;
+  state.pending = false;
+  await load();
+  state.moving = true;
+
+  // where it lands
+  const landing = status === 'done'
+    ? ($('.heap i.new, .stack i.new') || $('.pile, .spike'))
+    : $(`.item[data-id="${id}"]`);
+  if (!landing || !from.width) { ghost.remove(); settle(0); return true; }
+  const realCard = status === 'done' ? null : landing;
+  landing.style.visibility = 'hidden';
+
+  // bring the landing spot into view (the falling copy is fixed, so it doesn't move)
+  const lr = landing.getBoundingClientRect();
+  const view = line.getBoundingClientRect();
+  if (lr.top < view.top + 60 || lr.bottom > view.bottom - 20) {
+    line.scrollTop += lr.top - (view.top + view.height * (status === 'done' ? 0.62 : 0.4));
+  }
+  const to = landing.getBoundingClientRect();
+  glide(before, id);
+
+  const rail = state.skin === 'rail';
+  const anim = status === 'done'
+    ? fallInto(ghost, from, to, rail)
+    : dropTo(ghost, from, to, rail);
+  await anim.finished.catch(() => {});
+  ghost.remove();
+
+  landing.style.visibility = '';
+  if (realCard) {
+    realCard.classList.add(rail ? 'landed-rail' : 'landed');
+  } else {
+    landing.classList.add('landed');
+    $('.pile, .spike')?.classList.add('thud');
+    setTimeout(() => $('.pile, .spike')?.classList.remove('thud'), 450);
+  }
+  if (remote) toast({ fixed: `#${id} was marked fixed`, done: `#${id} was approved`, open: `#${id} was reopened` }[status]);
+  else if (!quietToast) toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
+  quietToast = false;
+  settle(1200 * SLOW);
+  return true;
 }
+
+// ---------- motion helpers (board skins) ----------
+/** Screen positions of the cards, zone headers and the pile, by key. */
+function snapshot() {
+  const map = new Map();
+  for (const el of document.querySelectorAll('#items .item[data-id], #items .zone-head, #items .pile, #items .spike, #items .zone-empty, #items .show-done')) {
+    map.set(flipKey(el), el.getBoundingClientRect().top);
+  }
+  return map;
+}
+const flipKey = (el) => el.dataset.id ? `i${el.dataset.id}` : `${el.className.split(' ')[0]}:${el.closest('.zone')?.dataset.zone || ''}`;
+
+/** Everything that moved slides from its old spot to the new one. */
+function glide(before, skipId) {
+  for (const el of document.querySelectorAll('#items .item[data-id], #items .zone-head, #items .pile, #items .spike, #items .zone-empty, #items .show-done')) {
+    if (el.dataset.id === String(skipId)) continue;
+    const was = before.get(flipKey(el));
+    if (was === undefined) continue;
+    const dy = was - el.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) continue;
+    el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
+      { duration: 420 * SLOW, easing: 'cubic-bezier(.25, .8, .25, 1)' });
+  }
+}
+
+/** Sample a motion into keyframes (linear between samples), so the fall follows real gravity. */
+function sampled(n, fn) {
+  return Array.from({ length: n + 1 }, (_, k) => ({ ...fn(k / n), offset: k / n }));
+}
+
+/** Drop down a level (or climb back up): gravity, a slight tilt, lands exactly on the new stick. */
+function dropTo(ghost, from, to, rail) {
+  const dx = to.left - from.left;
+  const dy = to.top - from.top;
+  ghost.style.transformOrigin = rail ? '0 0' : '70px 0';
+  if (dy <= 0) {   // going up (reopen / undo): a quick lift, then it eases onto the stick
+    return ghost.animate(sampled(14, (t) => {
+      const e = 1 - (1 - t) ** 3;
+      return { transform: `translate(${dx * e}px, ${dy * e}px) rotate(${rail ? 0 : -Math.min(2, (7 / from.width) * 57.3) * Math.sin(Math.PI * t)}deg)` };
+    }), { duration: Math.min(900, 380 + Math.abs(dy) * 0.35) * SLOW, fill: 'forwards' });
+  }
+  const tilt = rail ? 0 : Math.min(3, (10 / from.width) * 57.3);
+  return ghost.animate(sampled(16, (t) => ({
+    // y = ½gt²: slow start, speeding up; a little sideways drift and tilt as it lets go
+    transform: `translate(${dx * t}px, ${dy * t * t}px) rotate(${tilt * Math.sin(Math.PI * t)}deg)`,
+  })), { duration: Math.min(900, 260 + Math.sqrt(dy) * 26) * SLOW, fill: 'forwards' });
+}
+
+/** Approve: the card falls straight down onto the pile and only shrinks as it gets there. */
+function fallInto(ghost, from, to, rail) {
+  const dx = to.left + to.width / 2 - (from.left + from.width / 2);
+  const dy = to.top + to.height / 2 - (from.top + from.height / 2);
+  const side = dx >= 0 ? 1 : -1;
+  ghost.style.transformOrigin = '50% 50%';
+  // end the size of a monkey head (or a ticket sliver on the spike)
+  const endX = rail ? 120 / from.width : 26 / from.width;
+  const endY = rail ? 6 / from.height : 26 / from.height;
+  return ghost.animate(sampled(18, (t) => {
+    const k = t < 0.55 ? 0 : (t - 0.55) / 0.45;          // shrink only in the last part of the fall
+    const sx = 1 - k * (1 - endX);
+    const sy = 1 - k * (1 - endY);
+    return {
+      transform: `translate(${dx * t * t}px, ${dy * t * t}px) rotate(${rail ? 0 : side * Math.min(10, (30 / from.width) * 57.3) * t}deg) scale(${sx}, ${sy})`,
+      opacity: t < 0.9 ? 1 : 1 - (t - 0.9) / 0.1,
+    };
+  }), { duration: Math.min(1000, 320 + Math.sqrt(Math.abs(dy)) * 28) * SLOW, fill: 'forwards' });
+}
+
+/** Let renders through again once the landing swing is over. */
+function settle(after) {
+  setTimeout(() => {
+    state.moving = false;
+    if (state.pending) render();
+  }, after);
+}
+
+// ⌘Z / ⌘⇧Z: undo and redo moves (approve, mark fixed, reopen)
+const undoStack = [];
+const redoStack = [];
+let quietToast = false;
+const LABEL = { open: 'Open', fixed: 'To check', done: 'Done' };
+
+async function changeStatus(id, status, note, { from = 'user' } = {}) {
+  const before = state.comments.find((c) => c.id === id);
+  const step = before && { id, from: before.status, to: status, fixNote: before.fix_note, note };
+  const li = $(`.item[data-id="${id}"]`);
+  let ok;
+  if (li && board() && !reduceMotion()) {
+    quietToast = from !== 'user';
+    ok = await boardMove(li, id, status, note);
+  } else {
+    li?.classList.add('leaving', `to-${status}`);
+    try {
+      await api('POST', `/api/comments/${id}/status`, { status, note: note || undefined });
+      state.asking = null;
+      state.moved = { id, status };
+      await sleep(board() ? 420 : 300);
+      if (from === 'user') toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
+      await load();
+      ok = true;
+    } catch (e) { li?.classList.remove('leaving'); toast(e.message); ok = false; }
+  }
+  if (ok && step) {
+    if (from === 'user') { undoStack.push(step); redoStack.length = 0; }
+    if (undoStack.length > 50) undoStack.shift();
+  }
+  return ok;
+}
+
+// Going back to "fixed" needs a note: reuse the one it had.
+const noteFor = (status, step) => (status === 'fixed' ? step.fixNote || step.note || 'Restored with undo' : undefined);
+
+async function undo() {
+  const step = undoStack.pop();
+  if (!step) return toast('Nothing to undo');
+  if (await changeStatus(step.id, step.from, noteFor(step.from, step), { from: 'undo' })) {
+    redoStack.push(step);
+    toast(`Undo: #${step.id} back to ${LABEL[step.from]}`);
+  } else undoStack.push(step);
+}
+
+async function redo() {
+  const step = redoStack.pop();
+  if (!step) return toast('Nothing to redo');
+  if (await changeStatus(step.id, step.to, noteFor(step.to, step), { from: 'redo' })) {
+    undoStack.push(step);
+    toast(`Redo: #${step.id} to ${LABEL[step.to]}`);
+  } else redoStack.push(step);
+}
+
+const isEditable = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+document.addEventListener('keydown', (ev) => {
+  if (!(ev.metaKey || ev.ctrlKey) || ev.altKey || ev.key.toLowerCase() !== 'z') return;
+  if (isEditable(document.activeElement)) return;   // normal text undo in fields
+  ev.preventDefault();
+  (ev.shiftKey ? redo : undo)();
+});
+/** Called by the Mac panel for ⌘Z / ⌘⇧Z. Returns 'native' when a text field should undo itself. */
+window.gcUndo = (redoing) => {
+  if (isEditable(document.activeElement)) return 'native';
+  (redoing ? redo : undo)();
+  return 'handled';
+};
 
 $('#items').addEventListener('click', async (ev) => {
   if (ev.target.closest('[data-act="toggle-done"]')) { state.allDone = !state.allDone; return render(); }
@@ -573,7 +812,7 @@ $('#pd-delete').addEventListener('click', async () => {
 
 // ---------- keyboard ----------
 document.addEventListener('keydown', (ev) => {
-  if (ev.target.matches('input, textarea, select') || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (isEditable(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) return;
   if (ev.key === 'n' || ev.key === 'c') { ev.preventDefault(); body.focus(); }
   const tab = { 1: 'open', 2: 'fixed', 3: 'done' }[ev.key];
   if (tab) $(`#states [data-status="${tab}"]`).click();
@@ -587,7 +826,20 @@ function connect() {
   es = new EventSource(withToken('/api/events'));
   es.addEventListener('open', () => $('#live').classList.add('on'));
   es.addEventListener('error', () => $('#live').classList.remove('on'));
-  es.addEventListener('change', () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(load, 120); });
+  es.addEventListener('change', (ev) => {
+    let data = {};
+    try { data = JSON.parse(ev.data); } catch {}
+    const c = data.id && state.comments.find((x) => x.id === data.id);
+    const li = c && $(`#items .item[data-id="${data.id}"]`);
+    // an agent pulled a stick: show the card falling instead of just jumping
+    if (li && data.status && c.status !== data.status && board() && !state.moving && !reduceMotion()) {
+      clearTimeout(reloadTimer);
+      boardMove(li, data.id, data.status, null, { remote: true });
+      return;
+    }
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(load, 120);
+  });
 }
 
 setInterval(() => !state.asking && render(), 60000); // refresh "5m" labels

@@ -6,12 +6,18 @@ import WebKit
 
 let port = ProcessInfo.processInfo.environment["GOODCOMMENTS_PORT"] ?? "4477"
 let base = "http://127.0.0.1:\(port)"
-let panelWidth: CGFloat = 400
+let minWidth: CGFloat = 340
+let maxWidth: CGFloat = 900
+var panelWidth: CGFloat = {
+    let saved = CGFloat(UserDefaults.standard.double(forKey: "width"))
+    return saved > 0 ? min(max(saved, minWidth), maxWidth) : 460
+}()
 let margin: CGFloat = 8
 let edgeDwell: TimeInterval = 0.22   // how long the pointer rests on the edge before the line slides in
 let leaveDelay: TimeInterval = 0.6   // how long the pointer is away before it slides out
 
 final class EdgePanel: NSPanel {
+    weak var web: WKWebView?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     // The panel doesn't activate the app, so the main menu may never see ⌘-keys:
@@ -19,6 +25,16 @@ final class EdgePanel: NSPanel {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if mods == .command || mods == [.command, .shift], let key = event.charactersIgnoringModifiers?.lowercased() {
+            // ⌘Z / ⌘⇧Z: the page undoes moves (approve, fix, reopen); text fields keep native undo.
+            if key == "z", let web {
+                let redo = mods.contains(.shift)
+                web.evaluateJavaScript("window.gcUndo ? gcUndo(\(redo)) : 'native'") { result, _ in
+                    if (result as? String) != "handled" {
+                        NSApp.sendAction(redo ? Selector(("redo:")) : Selector(("undo:")), to: nil, from: self)
+                    }
+                }
+                return true
+            }
             let action: Selector? = switch (key, mods.contains(.shift)) {
             case ("v", false): #selector(NSText.paste(_:))
             case ("c", false): #selector(NSText.copy(_:))
@@ -35,6 +51,25 @@ final class EdgePanel: NSPanel {
 
     // let the panel park itself off-screen
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
+/// A thin strip on the panel's left edge: drag it to make the column wider or narrower.
+final class ResizeHandle: NSView {
+    var onResize: ((CGFloat) -> Void)?
+    var onEnd: (() -> Void)?
+    private var startX: CGFloat = 0
+    private var startWidth: CGFloat = 0
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        startX = NSEvent.mouseLocation.x
+        startWidth = window?.frame.width ?? panelWidth
+    }
+    override func mouseDragged(with event: NSEvent) {
+        onResize?(startWidth + (startX - NSEvent.mouseLocation.x))
+    }
+    override func mouseUp(with event: NSEvent) { onEnd?() }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
@@ -97,10 +132,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         web.navigationDelegate = self
         web.uiDelegate = self
         web.autoresizingMask = [.width, .height]
+        panel.web = web
 
         glass.addSubview(web)
         panel.contentView = glass
         web.frame = glass.bounds
+
+        let handle = ResizeHandle(frame: NSRect(x: 0, y: 0, width: 7, height: glass.bounds.height))
+        handle.autoresizingMask = [.height, .maxXMargin]
+        handle.onResize = { [weak self] w in self?.resize(to: w) }
+        handle.onEnd = { UserDefaults.standard.set(Double(panelWidth), forKey: "width") }
+        glass.addSubview(handle)
     }
 
     func screenUnderPointer() -> NSScreen {
@@ -132,6 +174,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             panel.makeKey()
             web.evaluateJavaScript("document.getElementById('c-body')?.focus()")
         }
+    }
+
+    func resize(to width: CGFloat) {
+        panelWidth = min(max(width, minWidth), maxWidth)
+        let s = panel.screen ?? screenUnderPointer()
+        panel.setFrame(shownFrame(s), display: true)
     }
 
     func hide() {
