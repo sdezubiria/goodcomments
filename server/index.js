@@ -2,10 +2,12 @@
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as store from './db.js';
 import { normalize as normalizeInbox } from './inbox.js';
+import { agentRuns, claudePath, openInEditor, resolveFile, startAgent } from './local.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -80,9 +82,10 @@ const route = (method, pattern, fn) => routes.push({ method, re: new RegExp(`^${
 const STATUS = Symbol('status');
 const created = (body) => ({ [STATUS]: 201, body });
 const NO_CONTENT = { [STATUS]: 204 };
+const RAW = Symbol('raw');   // plain text answer
 const actorOf = (req, body) => body?.actor || req.headers['x-actor'] || 'you';
 
-route('GET', '/api/health', () => ({ ok: true, name: 'goodcomments', storage: store.DB_KIND, db: store.DB_PATH, inbox: !!INBOX_KEY }));
+route('GET', '/api/health', () => ({ ok: true, name: 'goodcomments', storage: store.DB_KIND, db: store.DB_PATH, inbox: !!INBOX_KEY, local: LOCAL, claude: LOCAL && !!claudePath() }));
 
 route('GET', '/api/projects', () => store.listProjects());
 route('GET', '/api/projects/resolve', async (req, url) => {
@@ -130,6 +133,56 @@ route('POST', '/api/comments/(\\d+)/notes', async (req, url, [id]) => {
   return c;
 });
 route('DELETE', '/api/comments/(\\d+)', async (req, url, [id]) => { await store.deleteComment(id); broadcast('change', { id: Number(id) }); return NO_CONTENT; });
+
+// ---------- local-only actions: open a file in your editor, ask Claude Code to fix a comment ----------
+// Only on a localhost server, from this machine, with an x-goodcomments header that other sites can't send.
+function localOnly(req) {
+  const from = req.socket.remoteAddress || '';
+  if (!LOCAL || !/^(127\.|::1$|::ffff:127\.)/.test(from)) throw new HttpError(403, 'only on a local GoodComments server');
+  if (req.headers['x-goodcomments'] === undefined) throw new HttpError(400, 'send an x-goodcomments header');
+}
+// logs live next to the database (~/.goodcomments by default)
+const LOG_DIR = store.DB_KIND === 'sqlite' ? dirname(store.DB_PATH) : join(homedir(), '.goodcomments');
+
+route('POST', '/api/comments/(\\d+)/open', async (req, url, [id]) => {
+  localOnly(req);
+  const c = await store.getComment(id);
+  if (!c.location) throw new HttpError(400, 'this comment has no location');
+  if (/^https?:\/\//i.test(c.location)) throw new HttpError(400, 'that’s a web address: open it in the browser');
+  return openInEditor(resolveFile(await store.getProject(c.project_id), c.location));
+});
+
+route('GET', '/api/agent-runs', () => (LOCAL ? agentRuns() : {}));
+route('POST', '/api/comments/(\\d+)/agent', async (req, url, [id]) => {
+  localOnly(req);
+  const c = await store.getComment(id);
+  const run = startAgent(c, await store.getProject(c.project_id), {
+    port: PORT,
+    logDir: LOG_DIR,
+    onEnd: async (cid, r) => {
+      const now = await store.getComment(cid).catch(() => null);
+      if (now?.status === 'fixed') r.state = 'fixed';
+      else if (now && r.state === 'finished') {
+        r.state = 'stopped';
+        await store.addNote(cid, { actor: 'claude', note: `The agent stopped without marking it fixed. Log: ${r.log}` }).catch(() => {});
+      } else if (now) {
+        const tail = await readFile(r.log, 'utf8').then((t) => t.slice(-2000), () => '');
+        if (/not logged in|\/login/i.test(tail)) r.error = 'Claude Code isn’t signed in: run claude once in Terminal and sign in';
+        await store.addNote(cid, { actor: 'claude', note: `The agent run failed${r.error ? `: ${r.error}` : r.code != null ? ` (exit ${r.code})` : ''}. Log: ${r.log}` }).catch(() => {});
+      }
+      broadcast('agent', { id: cid, ...r });
+      broadcast('change', { id: cid });
+    },
+  });
+  broadcast('agent', { id: c.id, ...run });
+  return created(run);
+});
+route('GET', '/api/comments/(\\d+)/agent/log', async (req, url, [id]) => {
+  const run = LOCAL && agentRuns()[id];
+  const path = run?.log || join(LOG_DIR, `agent-${Number(id)}.log`);
+  const text = await readFile(path, 'utf8').catch(() => { throw new HttpError(404, 'no agent log for this comment'); });
+  return { [RAW]: text.slice(-200000) };
+});
 
 // Clean the pile: archive done comments (all, { project }, or { ids }); restore with { ids }.
 route('POST', '/api/pile/clean', async (req) => {
@@ -234,6 +287,10 @@ const server = http.createServer(async (req, res) => {
         const m = r.method === req.method && url.pathname.match(r.re);
         if (!m) continue;
         const out = await r.fn(req, url, m.slice(1));
+        if (out?.[RAW] !== undefined) {
+          res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+          return res.end(out[RAW]);
+        }
         return out?.[STATUS] ? send(res, out[STATUS], out.body) : send(res, 200, out);
       }
       throw new HttpError(404, `no route for ${req.method} ${url.pathname}`);

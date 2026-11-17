@@ -17,7 +17,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key><string>GoodComments</string>
-  <key>CFBundleIdentifier</key><string>local.goodcomments.edge</string>
+  <key>CFBundleIdentifier</key><string>BUNDLE_ID</string>
   <key>CFBundleExecutable</key><string>GoodComments</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSScreenCaptureUsageDescription</key><string>GoodComments takes screenshots you choose, so you can draw on them and attach them to comments.</string>
@@ -25,16 +25,29 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSServices</key>
+  <array>
+    <dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>Send to GoodComments</string></dict>
+      <key>NSMessage</key><string>sendToGoodComments</string>
+      <key>NSPortName</key><string>GoodComments</string>
+      <key>NSSendTypes</key><array><string>NSStringPboardType</string><string>public.utf8-plain-text</string></array>
+      <key>NSRequiredContext</key><dict/>
+    </dict>
+  </array>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>
 </plist>
 PLIST
+# GOODCOMMENTS_BUNDLE_ID gives a test build its own identity (settings, notifications, Services) next to the real app
+BUNDLE_ID="${GOODCOMMENTS_BUNDLE_ID:-local.goodcomments.edge}"
+sed -i '' "s/BUNDLE_ID/$BUNDLE_ID/" "$APP/Contents/Info.plist"
 # Sign with a real identity when there is one (GOODCOMMENTS_SIGN_IDENTITY=- forces ad-hoc), so macOS keeps permissions (Screen Recording)
 # across rebuilds; an ad-hoc signature changes on every build and makes macOS ask again.
 IDENTITY="${GOODCOMMENTS_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -nE 's/.*"(Apple Development: [^"]+)".*/\1/p' | head -1)}"
 if [ -n "$IDENTITY" ]; then
-  codesign --force --sign "$IDENTITY" --identifier local.goodcomments.edge "$APP" >/dev/null 2>&1 \
+  codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP" >/dev/null 2>&1 \
     || { echo "warning: couldn't sign with \"$IDENTITY\"; using an ad-hoc signature" >&2; codesign --force --sign - "$APP" >/dev/null 2>&1 || true; }
 else
   codesign --force --sign - "$APP" >/dev/null 2>&1 || true

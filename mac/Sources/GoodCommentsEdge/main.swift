@@ -2,6 +2,7 @@
 // the screen. Rest the pointer on the right edge (or press ⌃⌥C) and it slides in.
 import AppKit
 import Carbon.HIToolbox
+import UserNotifications
 import WebKit
 
 let port = ProcessInfo.processInfo.environment["GOODCOMMENTS_PORT"] ?? "4477"
@@ -73,7 +74,7 @@ final class ResizeHandle: NSView {
     override func mouseUp(with event: NSEvent) { onEnd?() }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UNUserNotificationCenterDelegate {
     var panel: EdgePanel!
     var web: WKWebView!
     var statusItem: NSStatusItem!
@@ -87,6 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var picking = false             // a file picker is open: stay put
     var holdUntil = Date.distantPast // stay open a little after picking files or taking a screenshot
     var resizeHandle: ResizeHandle!
+    var quick: EdgePanel!            // the ⌃⌥N quick-capture window
+    var quickWeb: WKWebView!
+    var quickLoaded = false
+    var fixedSeen: [Int: String]?   // comment id → fixed_at, from the last poll (nil until the first one)
+    var ownMoves: [Int: Date] = [:] // cards you moved in the panel: no notification for those
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -94,9 +100,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         buildPanel()
         buildMenu()
         registerHotKey()
+        buildQuick()
+        NSApp.servicesProvider = self
+        NSUpdateDynamicServices()
+        UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in self?.pollToCheck() }
         ensureServer { [weak self] ok in
             guard let self else { return }
-            if ok { self.web.load(URLRequest(url: URL(string: "\(base)/?embed=1")!)) }
+            if ok { self.web.load(URLRequest(url: URL(string: "\(base)/?embed=1")!)); self.pollToCheck() }
             else { self.web.loadHTMLString(Self.offlineHTML, baseURL: nil) }
         }
         Timer.scheduledTimer(withTimeInterval: 0.07, repeats: true) { [weak self] _ in self?.tick() }
@@ -265,12 +277,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // MARK: menu bar
 
     func buildMenu() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = Self.monkeyTemplate()
+        statusItem.button?.imagePosition = .imageLeading
         let menu = NSMenu()
         let showItem = NSMenuItem(title: "Show comments", action: #selector(toggle), keyEquivalent: "c")
         showItem.keyEquivalentModifierMask = [.control, .option]
         menu.addItem(showItem)
+        let quickItem = NSMenuItem(title: "New comment…", action: #selector(openQuickFromMenu), keyEquivalent: "n")
+        quickItem.keyEquivalentModifierMask = [.control, .option]
+        menu.addItem(quickItem)
         menu.addItem(NSMenuItem(title: "Minimize", action: #selector(minimize), keyEquivalent: ""))
         let shotItem = NSMenuItem(title: "Take a screenshot…", action: #selector(captureFromMenu), keyEquivalent: "s")
         shotItem.keyEquivalentModifierMask = [.control, .option]
@@ -313,6 +329,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         case "capture": capture(target: (body["target"] as? String) ?? "composer")
         case "editorOpen": enterEditor()
         case "editorClose": exitEditor()
+        case "moved": if let id = body["id"] as? Int { ownMoves[id] = Date() }
+        case "quickDone", "quickCancel": hideQuick()
         default: break
         }
     }
@@ -323,12 +341,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     @objc func reload() {
         ensureServer { [weak self] ok in
             if ok { self?.web.load(URLRequest(url: URL(string: "\(base)/?embed=1")!)) }
+            self?.quickLoaded = false
         }
     }
 
     // MARK: global hotkey ⌃⌥C (Carbon hotkeys need no permissions)
 
     var shotKey: EventHotKeyRef?
+    var quickKey: EventHotKeyRef?
 
     func registerHotKey() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
@@ -337,13 +357,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                               nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
             DispatchQueue.main.async {
-                if hk.id == 2 { delegate.capture(target: "composer") } else { delegate.toggle() }
+                switch hk.id {
+                case 2: delegate.capture(target: "composer")
+                case 3: delegate.openQuick()
+                default: delegate.toggle()
+                }
             }
             return noErr
         }, 1, &spec, nil, nil)
         let sig = OSType(0x4743_4D54) // "GCMT"
         RegisterEventHotKey(UInt32(kVK_ANSI_C), UInt32(controlKey | optionKey), EventHotKeyID(signature: sig, id: 1), GetApplicationEventTarget(), 0, &hotKey)
         RegisterEventHotKey(UInt32(kVK_ANSI_S), UInt32(controlKey | optionKey), EventHotKeyID(signature: sig, id: 2), GetApplicationEventTarget(), 0, &shotKey)
+        RegisterEventHotKey(UInt32(kVK_ANSI_N), UInt32(controlKey | optionKey), EventHotKeyID(signature: sig, id: 3), GetApplicationEventTarget(), 0, &quickKey)
     }
 
     // MARK: drawing editor
@@ -415,6 +440,146 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             }
         }
         do { try p.run() } catch { show() }
+    }
+
+    // MARK: quick capture (⌃⌥N, and "Send to GoodComments" in the Services menu)
+
+    /// A small floating window near the top of the screen with only the composer (the page in ?quick=1 mode).
+    func buildQuick() {
+        quick = EdgePanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 168),
+                          styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        quick.level = .floating
+        quick.isOpaque = false
+        quick.backgroundColor = .clear
+        quick.hasShadow = true
+        quick.hidesOnDeactivate = false
+        quick.isMovableByWindowBackground = true
+        quick.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let glass = NSVisualEffectView()
+        glass.material = .popover
+        glass.blendingMode = .behindWindow
+        glass.state = .active
+        glass.wantsLayer = true
+        glass.layer?.cornerRadius = 16
+        glass.layer?.masksToBounds = true
+        glass.layer?.borderWidth = 0.5
+        glass.layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
+        let config = WKWebViewConfiguration()
+        config.userContentController.add(self, name: "gc")
+        quickWeb = WKWebView(frame: .zero, configuration: config)
+        quickWeb.setValue(false, forKey: "drawsBackground")
+        quickWeb.underPageBackgroundColor = .clear
+        quickWeb.navigationDelegate = self
+        quickWeb.uiDelegate = self
+        quickWeb.autoresizingMask = [.width, .height]
+        quick.web = quickWeb
+        glass.addSubview(quickWeb)
+        quick.contentView = glass
+        quickWeb.frame = glass.bounds
+        NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: quick, queue: .main) { [weak self] _ in
+            // click elsewhere: it goes away, like Spotlight (what you typed stays for next time)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                guard let self, !self.quick.isKeyWindow, !self.picking else { return }
+                self.quick.orderOut(nil)
+            }
+        }
+    }
+
+    @objc func openQuickFromMenu() { openQuick() }
+
+    func openQuick(text: String? = nil) {
+        let s = screenUnderPointer().visibleFrame
+        quick.setFrame(NSRect(x: s.midX - 280, y: s.maxY - 168 - s.height * 0.18, width: 560, height: 168), display: true)
+        // a non-activating panel takes the keyboard without pulling you out of the app you're in
+        quick.makeKeyAndOrderFront(nil)
+        if !quickLoaded {
+            ensureServer { [weak self] ok in
+                guard let self else { return }
+                var c = URLComponents(string: "\(base)/")!
+                c.queryItems = [URLQueryItem(name: "quick", value: "1")] + (text.map { [URLQueryItem(name: "text", value: $0)] } ?? [])
+                if ok { self.quickWeb.load(URLRequest(url: c.url!)); self.quickLoaded = true }
+                else { self.quickWeb.loadHTMLString(Self.offlineHTML, baseURL: nil) }
+            }
+            return
+        }
+        // pass the text as JSON so quotes and newlines arrive intact
+        if let text, let data = try? JSONSerialization.data(withJSONObject: ["text": text]), let json = String(data: data, encoding: .utf8) {
+            quickWeb.evaluateJavaScript("window.gcQuick && gcQuick(\(json))")
+        } else {
+            quickWeb.evaluateJavaScript("window.gcQuick && gcQuick({ text: document.getElementById('c-body').value })")
+        }
+    }
+
+    func hideQuick() { quick.orderOut(nil) }
+
+    /// Services menu → "Send to GoodComments": the quick window, with the selected text in it.
+    @objc func sendToGoodComments(_ pboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+        let text = pboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        DispatchQueue.main.async { self.openQuick(text: text) }
+    }
+
+    // MARK: To check: menu bar count and notifications
+
+    /// Every few seconds: how many comments wait in To check (shown next to the monkey), and a notification
+    /// for each one that someone else (an agent, the CLI) just marked fixed.
+    func pollToCheck() {
+        var req = URLRequest(url: URL(string: "\(base)/api/comments?status=fixed&limit=1000")!)
+        req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { [weak self] data, res, _ in
+            let list = (res as? HTTPURLResponse)?.statusCode == 200
+                ? (data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [[String: Any]]) : nil
+            DispatchQueue.main.async { self?.updateToCheck(list) }
+        }.resume()
+    }
+
+    func updateToCheck(_ list: [[String: Any]]?) {
+        guard let list else { statusItem.button?.title = ""; return }
+        let n = list.count
+        statusItem.button?.title = n > 0 ? " \(n)" : ""
+        statusItem.button?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        statusItem.button?.toolTip = n > 0 ? "\(n) to check" : "GoodComments"
+
+        var now: [Int: String] = [:]
+        for c in list { if let id = c["id"] as? Int { now[id] = c["fixed_at"] as? String ?? "" } }
+        defer { fixedSeen = now }
+        guard let seen = fixedSeen else { return }   // first poll: don't announce what was already there
+        ownMoves = ownMoves.filter { Date().timeIntervalSince($0.value) < 120 }
+        for c in list {
+            guard let id = c["id"] as? Int, seen[id] != now[id], ownMoves[id] == nil else { continue }
+            notifyFixed(c)
+        }
+    }
+
+    func notifyFixed(_ c: [String: Any]) {
+        guard let id = c["id"] as? Int else { return }
+        let content = UNMutableNotificationContent()
+        let body = (c["body"] as? String ?? "").split(separator: "\n").first.map(String.init) ?? ""
+        content.title = body.count > 70 ? String(body.prefix(69)) + "…" : body
+        var subtitle = "Ready to check"
+        if let who = c["fixed_by"] as? String, !who.isEmpty, who != "you" { subtitle = "Fixed by \(who)" }
+        if let p = c["project_name"] as? String { subtitle += " · \(p)" }
+        content.subtitle = subtitle
+        content.body = c["fix_note"] as? String ?? ""
+        content.sound = .default
+        content.userInfo = ["id": id]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "fixed-\(id)", content: content, trigger: nil))
+    }
+
+    /// Click a notification: the column slides in with that card in focus.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler done: @escaping () -> Void) {
+        let id = response.notification.request.content.userInfo["id"] as? Int
+        DispatchQueue.main.async {
+            self.holdUntil = Date().addingTimeInterval(4)
+            self.show(focus: false)
+            NSApp.activate(ignoringOtherApps: true)
+            self.panel.makeKey()
+            if let id { self.web.evaluateJavaScript("window.gcFocus && gcFocus(\(id))") }
+        }
+        done()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void) {
+        done([.banner, .sound])
     }
 
     // MARK: local server

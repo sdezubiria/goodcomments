@@ -36,6 +36,10 @@ gc attach 12 before.png after.png   # show what you changed
 ```
 Set `GOODCOMMENTS_ACTOR=claude` (or your name) so changes show who made them.
 
+Tip for locations: write file locations relative to the project's folder (`src/header.php:42`). The owner's **Open** button opens them in their editor at that line.
+
+If you were started by the board's **Ask Claude** button, your task names the comment: fix only that, then `gc fix <id> "…"` (or `gc note <id> "…"` if blocked). The `gc` on your PATH already points at the right server.
+
 ## HTTP API (base `http://127.0.0.1:4477`)
 - `GET  /api/projects` · `GET /api/projects/resolve?path=<dir>`
 - `GET  /api/comments?project=<id>&status=open|fixed|done|all&q=<text>`
@@ -45,5 +49,7 @@ Set `GOODCOMMENTS_ACTOR=claude` (or your name) so changes show who made them.
 - `POST /api/comments/:id/notes` `{ note }`
 - `POST /api/comments/:id/attachments` raw file body, `content-type: image/png` (or jpeg/gif/webp/heic/pdf), `x-filename` header
 - `GET  /api/attachments/:id`
+- Local server only, for the board's buttons (need an `x-goodcomments: 1` header; agents don't need these):
+  `POST /api/comments/:id/open` (open its file in the owner's editor) · `POST /api/comments/:id/agent` (run Claude Code on it) · `GET /api/agent-runs` · `GET /api/comments/:id/agent/log`
 
 Send `content-type: application/json` and an `x-actor` header with your name.

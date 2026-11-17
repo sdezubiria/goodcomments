@@ -31,8 +31,17 @@ open mac/build/GoodComments.app
 
 The Mac app lives in the menu bar (speech-bubble icon). Rest the pointer on the right edge of the screen and the column slides in; ⌃⌥C toggles it. The 📌 button in its header keeps it open, and — minimizes it (a kept-open panel leaves a sliver at the edge; hover it to bring it back). Drag the panel's left edge to resize it. It starts the server for you if needed.
 
+- **To check, at a glance:** the number next to the menu-bar monkey is how many comments wait in To check. When an agent (or anyone else) marks one fixed you get a notification with the comment and the fix note; click it and the column opens on that card. Your own moves in the panel don't notify you.
+- **Capture from anywhere:** ⌃⌥N opens a small "new comment" window near the top of the screen: type, pick a project (it remembers the last one), ↵ hangs it, esc closes it. Select text in any app and choose **Services → Send to GoodComments** to open it with that text filled in. (If the Services item doesn't show up, open the app once from `/Applications` or run `/System/Library/CoreServices/pbs -update`.)
+
 ## The board
 Every state lives on one column: comments hang from monkeys on a trunk (open), drop to "To check" when fixed, and fall onto the pile at the bottom when you approve them. Drag and throw the monkeys on the pile; poke the ones on the trunk.
+
+**Keyboard** (when you're not typing in a field): `j` / `k` move a focus ring between cards, `↵` opens or closes the card, `a` approves it (in To check), `f` marks it fixed, `r` reopens it, `/` searches (filters the cards by text), `esc` clears the focus and the search. Also: `n` new comment, `1` `2` `3` jump to Open / To check / Done, ⌘Z / ⌘⇧Z undo and redo moves.
+
+**Open where it is:** a card whose *Where* is a URL gets an **Open** button. If it's a file in the project's folder (`src/header.php:42`, `./notes.md`), **Open** shows it in your editor: set `GOODCOMMENTS_EDITOR` (e.g. `code`, `cursor`, `zed`, `subl` — these jump to the line) before starting the server, or it uses macOS `open`. Only files inside the project's folder open.
+
+**Ask Claude:** open cards in a project with a folder get **Ask Claude**. It runs [Claude Code](https://claude.com/claude-code) headless in that folder (`claude -p`, allowed to read and edit files there and to call `gc show/fix/note`), with the comment as the task. The card shows "Claude is working…" and drops to To check by itself when Claude runs `gc fix`; if it stops without a fix it leaves a note. One run per comment, at most 30 minutes; the log is in `~/.goodcomments/agent-<id>.log`. Needs `claude` installed and signed in (`curl -fsSL https://claude.ai/install.sh | bash`, then run `claude` once). `GOODCOMMENTS_AGENT_TOOLS` changes the allowed tools; `GOODCOMMENTS_CLAUDE` points at a different binary. Both buttons only work on a local server.
 
 ## Cleaning the pile
 Click **🧹 Clean up** on the pile (or `gc clean`) to archive the done comments: they leave the board but stay in the database. ⌘Z (or `gc restore <ids>`) brings them back; `gc list -s done --archived` shows them.
@@ -63,6 +72,18 @@ Start the server with a secret key: `GOODCOMMENTS_INBOX_KEY=<secret> npm start`.
 Start the text with `#project` or `[Project]` to file it; an unknown tag still saves the comment, without a project.
 Email, Slack and your phone can only reach the inbox once the server is hosted (below).
 
+### iPhone: a Share Sheet Shortcut
+Your phone can't reach `127.0.0.1` on your Mac, so this needs [cloud mode](#cloud-mode) with `GOODCOMMENTS_INBOX_KEY` set (the server also needs `GOODCOMMENTS_TOKEN`, as always when it's public; the inbox uses its own key instead). In the Shortcuts app:
+1. New shortcut → ⓘ → turn on **Show in Share Sheet**; accept **Text, Images, URLs**.
+2. **If** *Shortcut Input* has any value *Image*:
+   - **Base64 Encode** *Shortcut Input* (line breaks: None)
+   - **Dictionary**: `text` = *Ask for Text* ("What's wrong?"), `attachments` = a list with one dictionary: `name` = `photo.jpg`, `type` = `image/jpeg`, `base64` = *Base64 Encoded*
+3. **Otherwise**: **Dictionary**: `text` = *Shortcut Input* (a shared URL lands as text; add `location` = *Shortcut Input* if you want it in *Where*)
+4. **Get Contents of URL** `https://your-server/api/inbox?key=<secret>&source=iPhone` — Method **POST**, Request Body **JSON** = the *Dictionary*.
+5. Optional: **Show Notification** "Hung on GoodComments".
+
+Start the text with `#acme` to file it in a project, or add `&project=acme` to the URL for a per-project shortcut. Images over 8 MB are refused, so share screenshots rather than full-size photos (or add **Resize Image** before encoding).
+
 ## Agents
 See [AGENTS.md](AGENTS.md) (also served at `/agents.md`). Register the MCP server once:
 ```bash
@@ -76,6 +97,7 @@ Agents can list, add, note and mark comments **fixed**; only you mark them **don
 | `server/db.js` | all queries (projects, comments, history, attachments) |
 | `server/sql.js` | storage backends: local SQLite at `~/.goodcomments/goodcomments.db` (`GOODCOMMENTS_DB`) or Turso/libSQL |
 | `server/inbox.js` | turns webhook payloads (email, Slack, text) into comments |
+| `server/local.js` | local-only actions: open a file in your editor, run Claude Code on a comment |
 | `server/index.js` | JSON API, live updates (SSE), serves the web column |
 | `server/client.js` | HTTP client used by the CLI and MCP (auto-starts the local server) |
 | `server/mcp.js` | MCP server over stdio |

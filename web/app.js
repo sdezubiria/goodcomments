@@ -3,6 +3,8 @@ import { openEditor as openDrawEditor, isOpen as drawing, undo as drawUndo, grab
 const $ = (s, el = document) => el.querySelector(s);
 const params = new URLSearchParams(location.search);
 if (params.has('embed')) document.documentElement.classList.add('embed');
+const QUICK = params.has('quick');   // the ⌃⌥N quick-capture window: only the composer
+if (QUICK) document.documentElement.classList.add('quick');
 
 const store = {
   get(k, d) { try { return localStorage.getItem('gc.' + k) ?? d; } catch { return d; } },
@@ -23,6 +25,11 @@ const state = {
   seen: new Set(),       // cards already on screen: they don't replay their entrance
   moving: false,         // a card is mid-fall: hold re-renders until it lands
   askFiles: [],          // screenshots waiting in the open fix / reopen box
+  focusId: null,         // the card with the keyboard focus ring (j / k)
+  q: '',                 // search text (filters cards, client-side)
+  local: false,          // a server on this Mac: files can open in the editor, agents can run
+  claude: false,         // Claude Code is installed
+  runs: {},              // comment id → agent run { state, started, log }
 };
 document.documentElement.dataset.skin = 'trunk';   // the one look: monkeys on a trunk
 
@@ -49,6 +56,7 @@ async function api(method, path, body, raw) {
 }
 
 async function load() {
+  if (QUICK) { state.projects = await api('GET', '/api/projects'); return renderProjects(); }
   const qs = new URLSearchParams({ status: 'all', limit: '3000' });
   if (state.project) qs.set('project', state.project);
   const [projects, comments] = await Promise.all([
@@ -60,6 +68,7 @@ async function load() {
   ]);
   state.projects = projects;
   state.comments = comments;
+  if (state.local) state.runs = await api('GET', '/api/agent-runs').catch(() => state.runs);
   for (const id of state.expanded) await loadDetail(id);
   render();
 }
@@ -150,11 +159,15 @@ function ago(iso) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 const isUrl = (s) => /^https?:\/\//i.test(s || '');
+// "src/header.php:12", "./notes.md", "~/site/style.css": a file in the project's folder (not "/contact", a page)
+const looksLikeFile = (s) => /^\S+$/.test(s || '') && (/\.\w{1,8}(:\d+){0,2}$/.test(s) || /^(\.{1,2}|~)\//.test(s));
 const icons = {
   check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg>',
   wrench: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 2.5a3 3 0 0 0-3.4 4L2.5 11.1a1.3 1.3 0 0 0 1.9 1.9L9 8.4a3 3 0 0 0 4-3.4l-1.8 1.8-1.7-.3-.3-1.7z"/></svg>',
   undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5L2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H7"/></svg>',
   copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>',
+  open: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3"/></svg>',
+  spark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.8l1.5 4.1 4.2 1.6-4.2 1.6L8 13.2 6.5 9.1 2.3 7.5l4.2-1.6z"/></svg>',
   trash: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2"/></svg>',
 };
 
@@ -200,6 +213,7 @@ function render() {
   state.moved = null;
   for (const c of state.comments) state.seen.add(c.id);
   $('.rope').style.setProperty('--rope-h', $('#items').scrollHeight + 60 + 'px');
+  applyFocus(false);
 
   if (state.asking) $(`#ask-${state.asking.id} input`)?.focus();
 }
@@ -214,19 +228,22 @@ const ZONES = {
 const tiltScale = () => Math.min(1, 380 / ($('#line')?.clientWidth || 380));
 const tilt = (id, span = 18) => ((id * 47) % (span + 1)) - span / 2;
 
+const matches = (c) => !state.q || [c.body, c.source, c.location, c.fix_note, c.reopen_note, c.project_name, c.author]
+  .some((v) => v && String(v).toLowerCase().includes(state.q));
+
 function renderBoard() {
-  const by = (s) => state.comments.filter((c) => c.status === s);
+  const by = (s) => state.comments.filter((c) => c.status === s && matches(c));
   const [open, fixed, done] = ['open', 'fixed', 'done'].map(by);
   const z = ZONES;
   const total = state.comments.length;
-  const pct = total ? Math.round((done.length / total) * 100) : 0;
+  const pct = total ? Math.round((state.comments.filter((c) => c.status === 'done').length / total) * 100) : 0;
   let i = 0;
   const zone = (key, items, inner = '', count = items.length) => `
     <li class="zone" data-zone="${key}">
       <div class="zone-head"><span class="dot ${key}"></span><h3>${z[key][0]}</h3><b>${count}</b><span class="zone-hint">${z[key][1]}</span></div>
       ${inner}
       <ol class="zone-items">${items.map((c) => renderItem(c, i++)).join('')}</ol>
-      ${!items.length && key !== 'done' ? `<p class="zone-empty">${key === 'open' ? 'Nothing hanging. Add one above.' : 'Nothing waiting for you.'}</p>` : ''}
+      ${!items.length && key !== 'done' ? `<p class="zone-empty">${state.q ? 'No matches.' : key === 'open' ? 'Nothing hanging. Add one above.' : 'Nothing waiting for you.'}</p>` : ''}
     </li>`;
 
   const newest = state.moved?.status === 'done' ? state.moved.id : null;
@@ -298,10 +315,22 @@ function renderItem(c, i) {
   const expanded = state.expanded.has(c.id);
   const asking = state.asking?.id === c.id ? state.asking.kind : null;
 
+  const run = state.runs[c.id];
+  const project = state.projects.find((p) => p.id === c.project_id);
+  const working = run?.state === 'running';
+  const openBtn = !c.location ? ''
+    : isUrl(c.location) ? `<a class="act" href="${esc(c.location)}" target="_blank" rel="noopener" title="Open ${esc(c.location)}">${icons.open}Open</a>`
+    : state.local && project?.path && looksLikeFile(c.location) ? `<button class="act" data-act="open-file" title="Open ${esc(c.location)} in your editor">${icons.open}Open</button>` : '';
+  const agentBtn = c.status !== 'open' || !state.local || !project?.path ? ''
+    : working ? `<span class="agent-run"><span class="spin"></span>Claude is working… <a href="${withToken(`/api/comments/${c.id}/agent/log`)}" target="_blank">log</a></span>`
+    : `<button class="act agent" data-act="agent" title="${state.claude ? `Run Claude Code in ${esc(project.path)} to fix this` : 'Claude Code isn’t installed: click to see how'}">${icons.spark}Ask Claude</button>`;
+  const agentNote = c.status === 'open' && run && (run.state === 'stopped' || run.state === 'failed')
+    ? `<div class="agent-note">${run.state === 'failed' ? esc(run.error || 'Claude couldn’t finish') : 'Claude stopped without a fix'} · <a href="${withToken(`/api/comments/${c.id}/agent/log`)}" target="_blank">log</a></div>` : '';
+
   const actions = {
-    open: `<button class="act fixit" data-act="ask-fix">${icons.wrench}Mark fixed</button>`,
+    open: `${working ? '' : `<button class="act fixit" data-act="ask-fix">${icons.wrench}Mark fixed</button>`}${openBtn}${agentBtn}`,
     fixed: `<button class="act approve" data-act="done">${icons.check}Approve</button>
-            <button class="act" data-act="ask-reopen">${icons.undo}Reopen</button>`,
+            <button class="act" data-act="ask-reopen">${icons.undo}Reopen</button>${openBtn}`,
     done: `<button class="act" data-act="ask-reopen">${icons.undo}Reopen</button>`,
   }[c.status];
 
@@ -336,7 +365,7 @@ function renderItem(c, i) {
       <form class="note-form" data-note="${c.id}"><input placeholder="Add a note…"><button class="act">Note</button></form>
     </div>` : '';
 
-  const sig = hash(JSON.stringify([c, expanded, asking, d?.events?.length ?? -1, asking ? state.askFiles.map((f) => f.name + f.size) : 0]));
+  const sig = hash(JSON.stringify([c, expanded, asking, run, project?.path, state.local, state.claude, d?.events?.length ?? -1, asking ? state.askFiles.map((f) => f.name + f.size) : 0]));
   return `
     <li data-sig="${sig}" class="item status-${c.status}${expanded ? ' expanded' : ''}${state.seen.has(c.id) ? '' : ' fresh'}${state.moved?.id === c.id ? ` arrived-${c.status}` : ''}" data-id="${c.id}" style="--i:${Math.min(i, 12)};--pc:${esc(c.project_color || 'var(--ink-3)')};--tw:${(tilt(c.id, 4) * tiltScale()).toFixed(2)}deg">
       <span class="pin" aria-hidden="true"></span>
@@ -368,12 +397,28 @@ function renderItem(c, i) {
         ${otherShots.length ? `<div class="shots">${otherShots.map(shotHtml).join('')}</div>` : ''}
         ${reopened}
         ${c.status === 'open' ? '' : fix}
-        ${ask || `<div class="actions">${actions}<span class="spacer"></span>
+        ${agentNote}
+        ${ask || `<div class="actions">${actions}<span class="tail">
           <button class="act icon" data-act="copy" title="Copy for an agent">${icons.copy}</button>
-          <button class="act icon" data-act="delete" title="Delete">${icons.trash}</button></div>`}
+          <button class="act icon" data-act="delete" title="Delete">${icons.trash}</button></span></div>`}
         ${history}
       </article>
     </li>`;
+}
+
+// ---------- local actions: open in the editor, ask an agent ----------
+// The x-goodcomments header tells the server this came from the page, not from another site.
+const localApi = (path) => api('POST', path, null, { headers: { 'x-goodcomments': '1' } });
+
+async function askAgent(c) {
+  const project = state.projects.find((p) => p.id === c.project_id);
+  if (!state.claude) return alert('Claude Code isn’t installed.\n\nInstall it in Terminal:\n  curl -fsSL https://claude.ai/install.sh | bash\n\nRun claude once to sign in, then reload GoodComments.');
+  if (!confirm(`Ask Claude Code to fix ${nameOf(c)}?\n\nIt works in ${project.path} in the background (it can read and edit files there) and moves the card to To check when it’s done.`)) return;
+  try {
+    state.runs[c.id] = await localApi(`/api/comments/${c.id}/agent`);
+    toast(`Claude is on ${nameOf(c)}`);
+    render();
+  } catch (e) { toast(e.message); }
 }
 
 // ---------- actions ----------
@@ -670,6 +715,7 @@ async function changeStatus(id, status, note, { from = 'user' } = {}) {
       ok = true;
     } catch (e) { li?.classList.remove('leaving'); toast(e.message); ok = false; }
   }
+  if (ok) panelBridge?.postMessage({ action: 'moved', id, status });
   if (ok && step) {
     if (from === 'user') { undoStack.push(step); redoStack.length = 0; }
     if (undoStack.length > 50) undoStack.shift();
@@ -803,6 +849,11 @@ $('#items').addEventListener('click', async (ev) => {
     return $(`#ask-${id} input:not([type=file])`)?.focus();
   }
   if (act === 'done') return changeStatus(id, 'done');
+  if (act === 'open-file') {
+    return localApi(`/api/comments/${id}/open`)
+      .then((r) => toast(`Opened ${r.opened.split('/').pop()}${r.line ? `:${r.line}` : ''}`), (e) => toast(e.message));
+  }
+  if (act === 'agent') return askAgent(c);
   if (act === 'copy') {
     const text = `GoodComments (${c.project_id || 'no project'}): ${c.body}${c.location ? `\nWhere: ${c.location}` : ''}\nWhen it's fixed, run: gc fix ${c.id} "what you changed"  (or MCP tool mark_fixed)`;
     await navigator.clipboard.writeText(text).then(() => toast('Copied for an agent'), () => toast('Copy failed'));
@@ -998,10 +1049,40 @@ composer.addEventListener('submit', async (ev) => {
     body.value = ''; $('#c-location').value = ''; grow();
     state.status = 'open'; store.set('status', 'open');
     toast(`Hung ${nameOf(c)}`);
+    if (QUICK) return quickClose('quickDone', c.id);
     await load();
     $('#line').scrollTop = 0;
   } catch (e) { toast(e.message); }
 });
+
+// ---------- quick capture (?quick=1): the ⌃⌥N window and "Send to GoodComments" ----------
+// ↵ hangs it, ⇧↵ is a new line, esc closes. The Mac app shows and hides the window.
+function quickClose(action, id) {
+  const bridge = window.webkit?.messageHandlers?.gc;
+  body.value = ''; $('#c-location').value = ''; $('#c-source').value = ''; grow();
+  pendingFiles.forEach((f) => f.url && URL.revokeObjectURL(f.url));
+  pendingFiles = []; renderFiles();
+  bridge?.postMessage({ action, id });
+}
+/** The Mac app calls this each time the window opens, with selected text when it came from the Services menu. */
+window.gcQuick = ({ text = '' } = {}) => {
+  body.value = text; grow();
+  const sel = $('#c-project');
+  const last = store.get('lastProject', '');
+  load().then(() => { if (state.projects.some((p) => p.id === last)) sel.value = last; }).catch(() => {});
+  body.focus();
+  body.setSelectionRange(body.value.length, body.value.length);
+};
+if (QUICK) {
+  composer.classList.add('open');
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); return quickClose('quickCancel'); }
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && ev.target.matches('textarea, input')) {
+      ev.preventDefault(); ev.stopPropagation(); composer.requestSubmit();
+    }
+  }, true);
+  window.gcQuick({ text: params.get('text') || '' });
+}
 
 // ---------- project dialog ----------
 const dlg = $('#project-dialog');
@@ -1044,11 +1125,75 @@ $('#pd-delete').addEventListener('click', async () => {
 });
 
 // ---------- keyboard ----------
+// n / c new comment · 1 2 3 zones · j / k move between cards · a approve · f mark fixed · r reopen
+// ↵ expand · / search · esc clear. Never while typing in a field.
+function applyFocus(scroll) {
+  for (const el of document.querySelectorAll('#items .item.kfocus')) if (Number(el.dataset.id) !== state.focusId) el.classList.remove('kfocus');
+  const el = state.focusId && $(`#items .item[data-id="${state.focusId}"]`);
+  if (!el) return;
+  el.classList.add('kfocus');
+  if (scroll) el.scrollIntoView({ block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth' });
+}
+function setFocus(id) { state.focusId = id; applyFocus(true); }
+
+const search = $('#search');
+const q = $('#q');
+function openSearch() { search.hidden = false; q.focus(); q.select(); }
+function clearSearch() {
+  q.value = ''; search.hidden = true;
+  if (state.q) { state.q = ''; render(); }
+}
+q.addEventListener('input', () => { state.q = q.value.trim().toLowerCase(); render(); });
+q.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') { ev.preventDefault(); clearSearch(); q.blur(); }
+  if (ev.key === 'Enter' || ev.key === 'ArrowDown') {   // jump into the results
+    ev.preventDefault();
+    q.blur();
+    const first = $('#items .item[data-id]');
+    if (first) setFocus(Number(first.dataset.id));
+    if (!q.value) search.hidden = true;
+  }
+});
+$('#search-btn').addEventListener('click', () => (search.hidden ? openSearch() : clearSearch()));
+
 document.addEventListener('keydown', (ev) => {
-  if (isEditable(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-  if (ev.key === 'n' || ev.key === 'c') { ev.preventDefault(); body.focus(); }
+  if (isEditable(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey || drawing() || dlg.open) return;
+  if (ev.key === 'n' || ev.key === 'c') { ev.preventDefault(); body.focus(); return; }
   const tab = { 1: 'open', 2: 'fixed', 3: 'done' }[ev.key];
-  if (tab) $(`#states [data-status="${tab}"]`).click();
+  if (tab) return $(`#states [data-status="${tab}"]`).click();
+  if (ev.key === '/') { ev.preventDefault(); return openSearch(); }
+  if (ev.key === 'Escape') {
+    if (state.focusId) { state.focusId = null; applyFocus(false); }
+    return clearSearch();
+  }
+  if (ev.key === 'j' || ev.key === 'k') {
+    const cards = [...document.querySelectorAll('#items .item[data-id]')];
+    if (!cards.length) return;
+    const at = cards.findIndex((el) => Number(el.dataset.id) === state.focusId);
+    const next = at < 0 ? (ev.key === 'j' ? 0 : cards.length - 1) : Math.max(0, Math.min(cards.length - 1, at + (ev.key === 'j' ? 1 : -1)));
+    ev.preventDefault();
+    return setFocus(Number(cards[next].dataset.id));
+  }
+  const c = state.focusId && state.comments.find((x) => x.id === state.focusId);
+  if (!c || !$(`#items .item[data-id="${c.id}"]`)) return;
+  if (ev.key === 'a') {
+    if (c.status === 'fixed') changeStatus(c.id, 'done');
+    else toast(c.status === 'open' ? 'Only cards in To check can be approved' : 'Already done');
+  } else if (ev.key === 'f' || ev.key === 'r') {
+    const kind = ev.key === 'f' ? 'fix' : 'reopen';
+    if (kind === 'fix' && c.status !== 'open') return toast('Only open cards can be marked fixed');
+    if (kind === 'reopen' && c.status === 'open') return toast('It’s already open');
+    ev.preventDefault();   // don't type the letter into the box that opens
+    clearAskFiles();
+    state.asking = { id: c.id, kind };
+    render();
+    applyFocus(true);
+  } else if (ev.key === 'Enter') {
+    if (ev.target.closest?.('button, a, summary')) return;   // Enter on a focused button clicks it
+    ev.preventDefault();
+    if (state.expanded.has(c.id)) { state.expanded.delete(c.id); render(); }
+    else loadDetail(c.id).then(() => { state.expanded.add(c.id); render(); });
+  }
 });
 
 // ---------- live ----------
@@ -1059,6 +1204,10 @@ function connect() {
   es = new EventSource(withToken('/api/events'));
   es.addEventListener('open', () => $('#live').classList.add('on'));
   es.addEventListener('error', () => $('#live').classList.remove('on'));
+  es.addEventListener('agent', (ev) => {
+    try { const r = JSON.parse(ev.data); state.runs[r.id] = r; } catch { return; }
+    render();
+  });
   es.addEventListener('change', (ev) => {
     let data = {};
     try { data = JSON.parse(ev.data); } catch {}
@@ -1075,9 +1224,12 @@ function connect() {
   });
 }
 
-setInterval(() => !state.asking && render(), 60000); // refresh "5m" labels
-load().catch((e) => toast(e.message));
-connect();
+if (!QUICK) {
+  setInterval(() => !state.asking && render(), 60000); // refresh "5m" labels
+  api('GET', '/api/health').then((h) => { state.local = !!h.local; state.claude = !!h.claude; }).catch(() => {})
+    .then(load).catch((e) => toast(e.message));
+  connect();
+}
 
 // ---------- Mac edge panel: keep open / minimize ----------
 // Only inside the Mac app, which exposes a message handler named "gc".
@@ -1087,6 +1239,14 @@ if (panelBridge) {
   $('#pin').addEventListener('click', () => panelBridge.postMessage({ action: 'togglePin' }));
   $('#minimize').addEventListener('click', () => panelBridge.postMessage({ action: 'minimize' }));
 }
+/** The Mac app calls this when you click a notification: put the focus ring on that card. */
+window.gcFocus = async (id) => {
+  if (state.q) clearSearch();
+  await load();
+  const c = state.comments.find((x) => x.id === Number(id));
+  if (c?.status === 'done' && !state.allDone) { state.allDone = true; render(); }
+  setFocus(Number(id));
+};
 /** The app tells the page whether the panel is kept open. */
 window.gcPanel = ({ pinned }) => {
   const b = $('#pin');
