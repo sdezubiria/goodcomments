@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoodComments · Comment it. Fix it. Check it off.</title>
+<meta name="description" content="A free, open source feedback tracker for your projects. Comments hang on a column at the edge of your screen: open, fixed by you or your agents, and done when you check them.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='9' y='3' width='14' height='26' rx='4' fill='%237c5cff'/><rect x='14' y='0' width='4' height='8' rx='1.5' fill='%23c9ced8'/></svg>">
+<style>
+  :root {
+    --bg: #f6f7fa; --grid: rgba(20, 30, 60, .05);
+    --ink: #15171c; --ink-2: #525a68; --ink-3: #8b919e;
+    --glass: rgba(255, 255, 255, .62); --glass-strong: rgba(255, 255, 255, .9);
+    --hair: rgba(20, 24, 40, .1); --edge: rgba(255, 255, 255, .95);
+    --shadow: 0 1px 1px rgba(15, 20, 40, .04), 0 10px 28px -10px rgba(15, 20, 40, .2);
+    --shadow-up: 0 2px 2px rgba(15, 20, 40, .05), 0 26px 50px -18px rgba(15, 20, 40, .32);
+    --open: #ff6b4a; --fixed: #7c5cff; --done: #23a86b;
+    --accent: #111318; --accent-ink: #fff; --code: #15171c; --code-ink: #e9ebf1;
+    --bark-a: #e4d2b0; --bark-b: #cfb78f; --face: #f4dcb6;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1013; --grid: rgba(255, 255, 255, .035);
+      --ink: #eef0f4; --ink-2: #aab0bc; --ink-3: #737a87;
+      --glass: rgba(28, 30, 36, .62); --glass-strong: rgba(36, 38, 46, .92);
+      --hair: rgba(255, 255, 255, .09); --edge: rgba(255, 255, 255, .08);
+      --shadow: 0 1px 1px rgba(0,0,0,.3), 0 12px 28px -10px rgba(0,0,0,.6);
+      --shadow-up: 0 2px 2px rgba(0,0,0,.3), 0 26px 50px -18px rgba(0,0,0,.75);
+      --accent: #f2f3f6; --accent-ink: #111318; --code: #1b1d23; --code-ink: #e9ebf1;
+      --bark-a: #5a4c38; --bark-b: #4a3d2c; --face: #e3c79c;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--ink); background: var(--bg);
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px;
+    font: 16px/1.55 system-ui, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  a { color: inherit; }
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .blobs { position: fixed; inset: 0; pointer-events: none; z-index: -1; overflow: hidden; }
+  .blobs i { position: absolute; border-radius: 50%; filter: blur(100px); opacity: .5; }
+  .blobs i:nth-child(1) { width: 46vw; height: 46vw; left: -14vw; top: 10vh; background: #9cc8ff; }
+  .blobs i:nth-child(2) { width: 40vw; height: 40vw; right: 8vw; top: -16vh; background: #d9b8ff; }
+  .blobs i:nth-child(3) { width: 36vw; height: 36vw; right: -12vw; top: 60vh; background: #ffc89a; }
+  @media (prefers-color-scheme: dark) { .blobs i { opacity: .16; } }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* nav */
+  nav { display: flex; align-items: center; gap: 22px; padding: 18px 0; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; text-decoration: none; letter-spacing: -.01em; }
+  .logo { width: 13px; height: 20px; border-radius: 4px; background: var(--fixed); position: relative; }
+  .logo::before { content: ""; position: absolute; left: 4.5px; top: -5px; width: 4px; height: 9px; border-radius: 1.5px; background: linear-gradient(90deg, #e9ebef, #b3b8c2); }
+  nav .links { margin-left: auto; display: flex; gap: 20px; font-size: 14px; }
+  nav .links a { text-decoration: none; color: var(--ink-2); }
+  nav .links a:hover { color: var(--ink); }
+  @media (max-width: 640px) { nav .links a:not(.gh) { display: none; } }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 48px; align-items: center; padding: 40px 0 70px; }
+  @media (max-width: 900px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+  .hero > *, .split > *, .tile { min-width: 0; }
+  .eyebrow { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); padding: 5px 12px; border-radius: 999px; background: var(--glass); border: 1px solid var(--edge); box-shadow: var(--shadow); }
+  .eyebrow b { color: var(--done); }
+  h1 { font-size: clamp(42px, 6.4vw, 76px); line-height: 1.02; letter-spacing: -.035em; margin: 22px 0 18px; }
+  h1 .grad { background: linear-gradient(90deg, var(--fixed), #e5487a 55%, var(--open)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { font-size: 19px; color: var(--ink-2); max-width: 34em; margin: 0 0 26px; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 12px; font-weight: 650; font-size: 15px; text-decoration: none; border: 1px solid transparent; cursor: pointer; font-family: inherit; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow); }
+  .btn.ghost { background: var(--glass); border-color: var(--edge); box-shadow: var(--shadow); color: var(--ink); }
+  .btn svg { width: 17px; height: 17px; }
+  .oneliner { margin-top: 18px; display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--code); color: var(--code-ink); font-size: 13.5px; box-shadow: var(--shadow); }
+  .oneliner code { flex: 1; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .oneliner code::-webkit-scrollbar { display: none; }
+  .copy { flex: none; border: 0; border-radius: 8px; padding: 7px 11px; font: 600 12.5px/1 system-ui, sans-serif; background: rgba(255,255,255,.12); color: inherit; cursor: pointer; }
+  .copy:hover { background: rgba(255,255,255,.2); }
+  .facts { margin-top: 16px; font-size: 13px; color: var(--ink-3); }
+
+  /* the live demo column */
+  .demo {
+    position: relative; height: 560px; max-width: 380px; width: 100%; justify-self: center;
+    border-radius: 22px; background: var(--glass); border: 1px solid var(--edge); box-shadow: var(--shadow-up);
+    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); overflow: hidden;
+  }
+  .demo .head { display: flex; align-items: center; gap: 8px; padding: 13px 14px; border-bottom: 1px solid var(--hair); font-size: 13px; font-weight: 650; }
+  .demo .head .live { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 20%, transparent); }
+  .demo .trunk { position: absolute; left: 13px; top: 46px; bottom: 0; width: 18px; border-radius: 9px; background: repeating-linear-gradient(180deg, var(--bark-a) 0 26px, var(--bark-b) 26px 29px); box-shadow: inset 4px 0 5px rgba(255,255,255,.35), inset -5px 0 7px rgba(0,0,0,.18); }
+  .demo .label { position: absolute; left: 44px; font-size: 11px; font-weight: 650; color: var(--ink-3); display: flex; gap: 6px; align-items: center; }
+  .demo .label i { width: 7px; height: 7px; border-radius: 50%; }
+  .card { position: absolute; left: 44px; right: 12px; transition: top .75s cubic-bezier(.55, 0, 1, .45), transform .5s, opacity .4s; }
+  .card .stick { position: absolute; left: -42px; top: -16px; width: 92px; height: 7px; border-radius: 4px; background: var(--pc); box-shadow: 0 2px 3px rgba(0,0,0,.18); transition: transform .22s cubic-bezier(.6, 0, .9, .5); }
+  .card.pulled .stick { transform: translateX(-70px) scaleX(.5); }
+  .card .monkey { position: absolute; left: 4px; top: -30px; width: 60px; height: 51px; z-index: 2; transform-origin: 14px 8px; }
+  .card .sheet { background: var(--glass-strong); border-radius: 16px; border-top: 4px solid var(--pc); box-shadow: var(--shadow); padding: 16px 12px 10px; font-size: 13px; }
+  .card .meta { font-size: 11px; color: var(--ink-3); display: flex; gap: 6px; margin-bottom: 3px; }
+  .card .meta b { color: var(--ink-2); }
+  .card .meta span { padding: 0 5px; border-radius: 5px; background: var(--hair); }
+  .card .fixnote { display: none; margin-top: 7px; padding: 6px 8px; border-radius: 8px; font-size: 11.5px; background: color-mix(in srgb, var(--fixed) 10%, transparent); border: 1px solid color-mix(in srgb, var(--fixed) 20%, transparent); }
+  .card .fixnote em { display: block; font-style: normal; color: var(--ink-3); font-size: 10.5px; }
+  .card.fixed .fixnote { display: block; }
+  .card.fixed .a2 { display: none; }
+  .card.fixed .a2-down { display: inline; }
+  .card .a2-down { display: none; }
+  .card.swing .sheet { animation: swing 1.1s cubic-bezier(.25, .8, .3, 1); transform-origin: 40px 0; }
+  .card.swing .monkey { animation: swing 1.1s cubic-bezier(.25, .8, .3, 1); }
+  @keyframes swing { 0% { transform: rotate(-6deg); } 20% { transform: rotate(6deg); } 42% { transform: rotate(-3.5deg); } 64% { transform: rotate(2deg); } 100% { transform: none; } }
+  .card.enter { animation: enter .8s cubic-bezier(.3, 1.4, .4, 1) both; }
+  @keyframes enter { 0% { opacity: 0; transform: translateY(-16px) rotate(3deg); } 100% { opacity: 1; transform: none; } }
+  .card.falling { transition: top .7s cubic-bezier(.55, 0, 1, .45), transform .7s cubic-bezier(.55, 0, 1, .45), opacity .7s ease-in; transform: rotate(9deg) scale(.12); opacity: 0; }
+  .monkey .arm { fill: none; stroke: var(--fur); stroke-width: 5.5; stroke-linecap: round; }
+  .monkey .fur, .monkey .hand { fill: var(--fur); }
+  .monkey .face { fill: var(--face); }
+  .monkey .eye { fill: #2b1a0e; }
+  .monkey .mouth { fill: none; stroke: #4a2a12; stroke-width: 1.4; stroke-linecap: round; }
+  .pile { position: absolute; left: 40px; right: 10px; bottom: 10px; height: 64px; display: flex; flex-wrap: wrap-reverse; justify-content: center; align-content: flex-start; padding: 0 30px; }
+  .pile i { width: 24px; height: 24px; margin: -3px -2px; border-radius: 50%; position: relative; transform: rotate(var(--r));
+    background: radial-gradient(circle at 39% 44%, #2b1a0e 0 1.5px, transparent 2px), radial-gradient(circle at 61% 44%, #2b1a0e 0 1.5px, transparent 2px), radial-gradient(ellipse 34% 26% at 50% 64%, var(--face) 98%, transparent 100%), radial-gradient(circle at 39% 45%, var(--face) 0 18%, transparent 19%), radial-gradient(circle at 61% 45%, var(--face) 0 18%, transparent 19%), var(--fur);
+    box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  .pile i.new { animation: land .55s cubic-bezier(.3, 1.6, .5, 1); }
+  @keyframes land { 0% { transform: translateY(-60px) rotate(var(--r)); } 60% { transform: translateY(0) rotate(var(--r)) scale(1.15, .85); } }
+  .ground { position: absolute; left: 40px; right: 10px; bottom: 8px; height: 6px; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(0,0,0,.15), transparent 70%); }
+  .demo-toast { position: absolute; left: 50%; bottom: 84px; transform: translate(-50%, 10px); opacity: 0; transition: .3s; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 9px; white-space: nowrap; }
+  .demo-toast.show { opacity: 1; transform: translate(-50%, 0); }
+  @media (prefers-reduced-motion: reduce) { .card, .card * { animation: none !important; transition: none !important; } }
+
+  /* sections */
+  section { padding: 70px 0; }
+  h2 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -.03em; line-height: 1.08; margin: 0 0 12px; }
+  .lede { color: var(--ink-2); font-size: 18px; max-width: 40em; margin: 0 0 36px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 860px) { .steps, .features { grid-template-columns: 1fr; } }
+  .tile { background: var(--glass); border: 1px solid var(--edge); border-radius: 18px; padding: 22px; box-shadow: var(--shadow); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .tile h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .tile p { margin: 0; color: var(--ink-2); font-size: 15px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .tile .num { font: 700 12px/1 ui-monospace, monospace; color: var(--ink-3); margin-bottom: 10px; display: block; }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  @media (max-width: 860px) { .split { grid-template-columns: minmax(0, 1fr); } }
+  pre { margin: 0; padding: 16px 18px; border-radius: 14px; background: var(--code); color: var(--code-ink); font-size: 13.5px; line-height: 1.6; overflow-x: auto; box-shadow: var(--shadow); }
+  pre .c { color: #8b93a4; }
+  ul.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  ul.checks li { padding-left: 28px; position: relative; color: var(--ink-2); }
+  ul.checks li::before { content: "✓"; position: absolute; left: 0; top: 0; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in srgb, var(--done) 15%, transparent); color: var(--done); font-size: 12px; font-weight: 800; display: grid; place-items: center; }
+  ul.checks b { color: var(--ink); }
+  .install { text-align: center; }
+  .install .lede { margin-left: auto; margin-right: auto; }
+  .install .oneliner { max-width: 760px; margin: 0 auto 18px; font-size: 14.5px; padding: 8px 8px 8px 18px; }
+  .install .ctas { justify-content: center; }
+  .install .small { margin-top: 26px; font-size: 14px; color: var(--ink-3); }
+  .install details { max-width: 760px; margin: 28px auto 0; text-align: left; }
+  .install summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
+  .install details pre { margin-top: 12px; }
+  footer { padding: 40px 0 60px; color: var(--ink-3); font-size: 14px; display: flex; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--hair); }
+  footer a { color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="blobs" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#"><span class="logo" aria-hidden="true"></span>GoodComments</a>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#agents">For agents</a>
+      <a href="#install">Install</a>
+      <a class="gh" href="https://github.com/sdezubiria/goodcomments">GitHub ↗</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <span class="eyebrow"><b>●</b> Free and open source · macOS</span>
+      <h1>Comment it.<br>Fix it.<br><span class="grad">Check it off.</span></h1>
+      <p class="sub">Feedback from email, WhatsApp, meetings and your agents hangs on a column at the edge of your screen. Agents fix and mark it; you check it and it drops on the pile.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#install">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M4.5 6.5L8 10l3.5-3.5M3 13h10"/></svg>
+          Install for Mac</a>
+        <a class="btn ghost" href="https://github.com/sdezubiria/goodcomments">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .2a8 8 0 0 0-2.5 15.6c.4 0 .5-.2.5-.4v-1.5c-2.2.5-2.7-1-2.7-1-.4-.9-.9-1.2-.9-1.2-.7-.5.1-.5.1-.5.8.1 1.2.8 1.2.8.7 1.3 1.9.9 2.4.7 0-.5.3-.9.5-1.1-1.8-.2-3.6-.9-3.6-4 0-.9.3-1.6.8-2.1-.1-.2-.4-1 .1-2.1 0 0 .7-.2 2.2.8a7.5 7.5 0 0 1 4 0c1.5-1 2.2-.8 2.2-.8.4 1.1.2 1.9.1 2.1.5.6.8 1.3.8 2.1 0 3.1-1.9 3.8-3.7 4 .3.3.6.8.6 1.5v2.2c0 .2.1.5.6.4A8 8 0 0 0 8 .2z"/></svg>
+          Source on GitHub</a>
+      </div>
+      <div class="oneliner"><code id="cmd-hero">curl -fsSL https://raw.githubusercontent.com/sdezubiria/goodcomments/main/install.sh | sh</code><button class="copy" data-copy="cmd-hero">Copy</button></div>
+      <p class="facts">MIT license · macOS 13 or later · Node.js 22.13+ · No account: your comments live on your Mac</p>
+    </div>
+
+    <div class="demo" id="demo" aria-label="A live demo of the GoodComments column">
+      <div class="head"><span class="logo" aria-hidden="true"></span>GoodComments<span class="live"></span></div>
+      <div class="trunk"></div>
+      <div class="label" style="top:58px"><i style="background:var(--open)"></i>Hanging</div>
+      <div class="label" style="top:322px"><i style="background:var(--fixed)"></i>To check</div>
+      <div class="label" style="top:452px"><i style="background:var(--done)"></i>The pile</div>
+      <div class="pile" id="pile"></div>
+      <div class="ground"></div>
+      <div class="demo-toast" id="demo-toast"></div>
+    </div>
+  </header>
+</div>
+
+<section id="how">
+  <div class="wrap">
+    <h2>Three states. Nothing else to learn.</h2>
+    <p class="lede">Not tied to pull requests or commits: it's a simple way to see what's been asked, what's been done, and what you've checked.</p>
+    <div class="steps">
+      <div class="tile"><span class="num">01</span><h3><span class="dot" style="background:var(--open)"></span>Open</h3>
+        <p>Hang a comment from the column, the terminal (<code>gc add</code>), a forwarded email, a Slack command or a WhatsApp share. Paste a screenshot with it.</p></div>
+      <div class="tile"><span class="num">02</span><h3><span class="dot" style="background:var(--fixed)"></span>Fixed</h3>
+        <p>You or an agent makes the change and pulls the stick: the card drops to “To check” with a note on what changed and where.</p></div>
+      <div class="tile"><span class="num">03</span><h3><span class="dot" style="background:var(--done)"></span>Done</h3>
+        <p>You check it and approve: it falls onto the pile, which grows as the project gets done. Not right yet? Reopen it with a screenshot.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="agents">
+  <div class="wrap split">
+    <div>
+      <h2>Built for your agents, too.</h2>
+      <p class="lede">An MCP server and a CLI that any agent can use. Inside a repo, they find that project's comments on their own.</p>
+      <ul class="checks">
+        <li><b>List, add and note</b> comments, and see the screenshots attached to them.</li>
+        <li><b>Mark fixed</b> with a note of what changed, so checking takes seconds.</li>
+        <li><b>Only you mark done.</b> Agents can't close their own work.</li>
+        <li><b>Live:</b> when an agent fixes something, you see the card fall.</li>
+      </ul>
+    </div>
+    <pre><span class="c"># one time: give Claude Code the tools</span>
+claude mcp add goodcomments -s user -- \
+  node ~/.goodcomments/app/bin/gc.js mcp
+
+<span class="c"># or use the CLI from any agent or script</span>
+gc                       <span class="c"># this repo's open comments</span>
+gc show 12
+gc fix 12 "Resized the hero in header.php"
+gc add "Footer link 404s" -f shot.png</pre>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Small, local, yours.</h2>
+    <p class="lede">A tiny server with no dependencies, a column that lives at the edge of your screen, and data that stays on your machine until you want it in the cloud.</p>
+    <div class="features">
+      <div class="tile"><h3>At the edge of your screen</h3><p>Rest the pointer on the right edge or press ⌃⌥C. Keep it open, minimize it, or drag to resize it.</p></div>
+      <div class="tile"><h3>Projects by folder</h3><p>Point a project at a repo and everything run inside it picks the right one automatically.</p></div>
+      <div class="tile"><h3>Screenshots everywhere</h3><p>Paste or drop images into a comment, a fix or a reopen. Agents get them as images.</p></div>
+      <div class="tile"><h3>Comments from anywhere</h3><p>A webhook inbox for email services, Slack slash commands, Shortcuts and scripts.</p></div>
+      <div class="tile"><h3>Local first, cloud later</h3><p>SQLite on your Mac today; a Dockerfile and Turso support when you want it hosted.</p></div>
+      <div class="tile"><h3>Poke the monkeys</h3><p>They have opinions. Throw the ones on the pile around. There may be bananas.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="install" class="install">
+  <div class="wrap">
+    <h2>Install in one line.</h2>
+    <p class="lede">Paste this in Terminal. It downloads GoodComments, adds the <code>gc</code> command, builds the menu bar app and, if you use Claude Code, connects it. Run it again any time to update.</p>
+    <div class="oneliner"><code id="cmd-install">curl -fsSL https://raw.githubusercontent.com/sdezubiria/goodcomments/main/install.sh | sh</code><button class="copy" data-copy="cmd-install">Copy</button></div>
+    <div class="ctas">
+      <a class="btn ghost" href="https://github.com/sdezubiria/goodcomments/archive/refs/heads/main.zip">Download the source (.zip)</a>
+      <a class="btn ghost" href="https://github.com/sdezubiria/goodcomments">View on GitHub ↗</a>
+      <a class="btn ghost" href="https://github.com/sdezubiria/goodcomments/blob/main/install.sh">Read the installer first</a>
+    </div>
+    <p class="small">Needs macOS 13+, <a href="https://nodejs.org">Node.js 22.13+</a> and Apple's Command Line Tools (<code>xcode-select --install</code>).</p>
+    <details>
+      <summary>Prefer to set it up by hand?</summary>
+      <pre>git clone https://github.com/sdezubiria/goodcomments.git
+cd goodcomments
+npm start                     <span class="c"># the board at http://127.0.0.1:4477</span>
+npm link                      <span class="c"># puts `gc` on your PATH</span>
+npm run mac && open mac/build/GoodComments.app
+
+<span class="c"># start a project from a repo</span>
+cd ~/Code/my-site && gc project add "My site" --path .</pre>
+    </details>
+  </div>
+</section>
+
+<div class="wrap">
+  <footer>
+    <span>GoodComments · MIT License</span>
+    <a href="https://github.com/sdezubiria/goodcomments">GitHub</a>
+    <a href="https://github.com/sdezubiria/goodcomments/blob/main/AGENTS.md">Guide for agents</a>
+    <a href="https://github.com/sdezubiria/goodcomments/issues">Report an issue</a>
+  </footer>
+</div>
+
+<script>
+  // copy buttons
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+    const text = document.getElementById(b.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Select & copy'; }
+    setTimeout(() => (b.textContent = 'Copy'), 1600);
+  }));
+
+  // ---------- live demo: comments get fixed, checked and fall on the pile ----------
+  const demo = document.getElementById('demo');
+  const pileEl = document.getElementById('pile');
+  const toastEl = document.getElementById('demo-toast');
+  const MONKEY = `<svg class="monkey" viewBox="0 0 64 54" aria-hidden="true">
+    <path class="arm" d="M21 33 C 15 25, 14 18, 17 11"/><path class="arm a2" d="M43 33 C 49 25, 50 18, 47 11"/><path class="arm a2-down" d="M43 33 C 50 38, 54 44, 56 50"/>
+    <circle class="hand" cx="17" cy="10" r="3.6"/><circle class="hand a2" cx="47" cy="10" r="3.6"/><circle class="hand a2-down" cx="56" cy="50" r="3.4"/>
+    <circle class="fur" cx="19" cy="30" r="5.5"/><circle class="fur" cx="45" cy="30" r="5.5"/><circle class="face" cx="19" cy="30" r="2.8"/><circle class="face" cx="45" cy="30" r="2.8"/>
+    <circle class="fur" cx="32" cy="32" r="12"/><circle class="face" cx="28.2" cy="29.5" r="4.6"/><circle class="face" cx="35.8" cy="29.5" r="4.6"/><ellipse class="face" cx="32" cy="36" rx="8.2" ry="6.4"/>
+    <circle class="eye" cx="28.6" cy="30" r="1.5"/><circle class="eye" cx="35.4" cy="30" r="1.5"/><path class="mouth" d="M28.5 38.2 Q32 40.8 35.5 38.2"/></svg>`;
+  const COMMENTS = [
+    ['ARQDIS', '#2f6fec', 'Notion', 'Menu: rename “Investigadores” to “Investigación y creación”', 'Renamed it in menu-publicos.php'],
+    ['Pabellón', '#22a55b', 'WhatsApp', 'Hero video stutters on Safari iOS', 'Re-encoded hero.mp4 with faststart'],
+    ['Nodo', '#d633c4', 'Figma', 'Map legend overlaps the zoom buttons on mobile', 'Moved the legend to bottom-left in map.css'],
+    ['Portfolio', '#f2a93b', 'Email', 'Footer still shows the old contact email', 'Updated footer.php and the contact page'],
+    ['ARQDIS', '#2f6fec', 'Meeting', 'Add the rankings before the “differentials” section', 'Added the rankings block on the home page'],
+  ];
+  const fur = (c) => `color-mix(in srgb, ${c} 30%, #7b4a25)`;
+  const SLOTS = { open: [92, 200], fixed: 352 };
+  let next = 0;
+  let open = [];
+  let fixed = null;
+
+  function makeCard() {
+    const [proj, color, src, text, fix] = COMMENTS[next++ % COMMENTS.length];
+    const el = document.createElement('div');
+    el.className = 'card enter';
+    el.style.setProperty('--pc', color);
+    el.style.setProperty('--fur', fur(color));
+    el.innerHTML = `<div class="stick"></div>${MONKEY}<div class="sheet"><div class="meta"><b>${proj}</b><span>${src}</span>now</div>${text}<div class="fixnote"><em>Fixed by claude · just now</em>${fix}</div></div>`;
+    demo.appendChild(el);
+    return el;
+  }
+  function place() {
+    open.forEach((el, k) => (el.style.top = SLOTS.open[k] + 'px'));
+    if (fixed) fixed.style.top = SLOTS.fixed + 'px';
+  }
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toast.t);
+    toast.t = setTimeout(() => toastEl.classList.remove('show'), 1500);
+  }
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function cycle() {
+    if (fixed) {                                  // you approve it: it falls on the pile
+      const el = fixed;
+      const furColor = el.style.getPropertyValue('--fur');
+      fixed = null;
+      el.classList.add('falling');
+      el.style.top = '470px';
+      toast('Approved ✓');
+      await wait(700);
+      el.remove();
+      const head = document.createElement('i');
+      head.className = 'new';
+      head.style.setProperty('--fur', furColor);
+      head.style.setProperty('--r', `${Math.random() * 30 - 15}deg`);
+      pileEl.appendChild(head);
+      if (pileEl.children.length > 22) pileEl.firstElementChild.remove();
+    } else if (open.length) {                     // an agent pulls the stick: it drops to "To check"
+      const el = open.shift();
+      el.classList.add('pulled');
+      await wait(240);
+      el.classList.remove('enter', 'pulled');
+      el.classList.add('fixed');
+      fixed = el;
+      place();
+      toast('An agent marked it fixed');
+      await wait(760);
+      el.classList.add('swing');
+      setTimeout(() => el.classList.remove('swing'), 1200);
+    }
+    if (open.length < 2) {                        // a new comment hangs on the trunk
+      await wait(500);
+      open.push(makeCard());
+      place();
+    }
+  }
+
+  // seed: a few on the pile, two hanging
+  for (let k = 0; k < 9; k++) {
+    const h = document.createElement('i');
+    const c = COMMENTS[k % COMMENTS.length][1];
+    h.style.setProperty('--fur', fur(c));
+    h.style.setProperty('--r', `${Math.random() * 30 - 15}deg`);
+    pileEl.appendChild(h);
+  }
+  open = [makeCard(), makeCard()];
+  place();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce) {
+    let busy = false;
+    setInterval(async () => {
+      if (busy || document.hidden) return;
+      busy = true;
+      await cycle();
+      busy = false;
+    }, 2600);
+  }
+</script>
+</body>
+</html>
