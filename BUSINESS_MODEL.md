@@ -14,7 +14,8 @@ Freelancers, agencies and designers who get feedback from many places (email, Wh
 ## 1. Remove install friction first
 Today people need Node 22 and Xcode's tools and build the app themselves. Most won't.
 - [ ] **Downloadable app:** join the Apple Developer Program ($99/year) to sign and notarize, and attach a ready-made `GoodComments.dmg` to each GitHub release. Without notarization macOS warns that the app is unsafe.
-- [ ] **Homebrew:** `brew install --cask goodcomments` (start with a tap). Mac developers trust it and it handles updates.
+- [x] **Homebrew tap:** `brew install sdezubiria/goodcomments/goodcomments` (builds from source; tap repo `sdezubiria/homebrew-goodcomments`). Bump `url`/`sha256` in the formula for each release.
+- [ ] **Homebrew cask:** once the app is notarized, a cask that installs the prebuilt `.dmg`.
 - [ ] **Bundle the server:** ship Node inside the app so the download is the only requirement.
 - [ ] **Turn on GitHub Pages** (Settings → Pages → `main` / `docs`) so the website is public.
 

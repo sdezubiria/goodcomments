@@ -7,8 +7,14 @@ No dependencies: Node ≥ 22.13 (built-in SQLite) and, for the edge panel, Xcode
 
 ## Install (macOS)
 ```bash
+brew install sdezubiria/goodcomments/goodcomments
+```
+or the one-line installer:
+```bash
 curl -fsSL https://raw.githubusercontent.com/sdezubiria/goodcomments/main/install.sh | sh
 ```
+Homebrew installs `gc`, builds the menu bar app (open it with `open "$(brew --prefix goodcomments)/libexec/mac/build/GoodComments.app"`) and adds a `brew services` entry for the server. Releases: [GitHub releases](https://github.com/sdezubiria/goodcomments/releases).
+
 Downloads GoodComments into `~/.goodcomments/app`, adds `gc` to `~/.local/bin`, builds the menu bar app into `~/Applications` and registers the MCP server with Claude Code if it's installed. Run it again to update. Needs Node.js 22.13+ and Apple's Command Line Tools. The website lives in [`docs/`](docs/index.html).
 
 ## Run from a clone
