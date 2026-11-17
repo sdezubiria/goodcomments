@@ -17,6 +17,7 @@ let margin: CGFloat = 8
 let edgeDwell: TimeInterval = 0.22   // how long the pointer rests on the edge before the line slides in
 let leaveDelay: TimeInterval = 0.6   // how long the pointer is away before it slides out
 let peek: CGFloat = 10               // a kept-open panel that's minimized leaves this much showing
+let quickHeight: CGFloat = 150       // the ⌃⌥N window
 
 final class EdgePanel: NSPanel {
     weak var web: WKWebView?
@@ -446,7 +447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     /// A small floating window near the top of the screen with only the composer (the page in ?quick=1 mode).
     func buildQuick() {
-        quick = EdgePanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 168),
+        quick = EdgePanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: quickHeight),
                           styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         quick.level = .floating
         quick.isOpaque = false
@@ -464,9 +465,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         glass.layer?.masksToBounds = true
         glass.layer?.borderWidth = 0.5
         glass.layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
+        glass.maskImage = Self.roundedMask(16)   // a floating window shows its corners: cut the glass itself, not just its layer
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "gc")
         quickWeb = WKWebView(frame: .zero, configuration: config)
+        quickWeb.wantsLayer = true
+        quickWeb.layer?.cornerRadius = 16
+        quickWeb.layer?.masksToBounds = true
         quickWeb.setValue(false, forKey: "drawsBackground")
         quickWeb.underPageBackgroundColor = .clear
         quickWeb.navigationDelegate = self
@@ -489,7 +494,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func openQuick(text: String? = nil) {
         let s = screenUnderPointer().visibleFrame
-        quick.setFrame(NSRect(x: s.midX - 280, y: s.maxY - 168 - s.height * 0.18, width: 560, height: 168), display: true)
+        quick.setFrame(NSRect(x: s.midX - 280, y: s.maxY - quickHeight - s.height * 0.18, width: 560, height: quickHeight), display: true)
+        quick.invalidateShadow()
         // a non-activating panel takes the keyboard without pulling you out of the app you're in
         quick.makeKeyAndOrderFront(nil)
         quick.makeFirstResponder(quickWeb)
@@ -630,6 +636,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         if let saved = UserDefaults.standard.string(forKey: "root"), hasServer(saved) { return saved }
         return nil
+    }
+
+    /// A stretchable rounded rectangle for NSVisualEffectView.maskImage.
+    static func roundedMask(_ r: CGFloat) -> NSImage {
+        let img = NSImage(size: NSSize(width: r * 2 + 1, height: r * 2 + 1), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+            return true
+        }
+        img.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+        img.resizingMode = .stretch
+        return img
     }
 
     /// The logo's monkey, hanging from its stick, drawn as a menu bar template (adapts to light/dark).

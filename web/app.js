@@ -1136,11 +1136,10 @@ function applyFocus(scroll) {
 }
 function setFocus(id) { state.focusId = id; applyFocus(true); }
 
-const search = $('#search');
 const q = $('#q');
-function openSearch() { search.hidden = false; q.focus(); q.select(); }
+function openSearch() { q.focus(); q.select(); }
 function clearSearch() {
-  q.value = ''; search.hidden = true;
+  q.value = '';
   if (state.q) { state.q = ''; render(); }
 }
 q.addEventListener('input', () => { state.q = q.value.trim().toLowerCase(); render(); });
@@ -1151,10 +1150,8 @@ q.addEventListener('keydown', (ev) => {
     q.blur();
     const first = $('#items .item[data-id]');
     if (first) setFocus(Number(first.dataset.id));
-    if (!q.value) search.hidden = true;
   }
 });
-$('#search-btn').addEventListener('click', () => (search.hidden ? openSearch() : clearSearch()));
 
 document.addEventListener('keydown', (ev) => {
   if (isEditable(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey || drawing() || dlg.open) return;
