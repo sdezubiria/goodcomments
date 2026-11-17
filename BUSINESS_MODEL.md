@@ -33,7 +33,7 @@ A client email becomes a comment → the agent fixes it → the card falls to "T
 "How I track client feedback with Claude Code", on a personal blog or dev.to, linking the repo.
 
 ## 5. Make it easy to keep growing
-- [ ] README: the GIF first, a one-line install, then screenshots.
+- [x] README: the GIF first, a one-line install, then screenshots.
 - [ ] GitHub topics: `mcp`, `claude-code`, `macos`, `feedback`, `ai-agents`.
 - [ ] A few "good first issue" labels to invite contributors.
 - [ ] Watch GitHub release downloads and traffic insights (there are no analytics in the app; that's a feature to mention).

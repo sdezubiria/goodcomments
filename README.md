@@ -3,6 +3,9 @@
 Feedback tracker for all your projects, hung on a line at the right edge of your screen.
 Every comment goes **open → fixed → done**: agents (or you) fix, you check and approve.
 
+<p align="center"><img src="docs/img/falling.gif" width="360" alt="GoodComments: an agent marks a comment fixed and it drops to To check; approving it drops it onto the pile of monkeys"></p>
+
+
 No dependencies: Node ≥ 22.13 (built-in SQLite) and, for the edge panel, Xcode.
 
 ## Install (macOS)
