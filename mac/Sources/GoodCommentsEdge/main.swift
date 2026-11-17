@@ -83,6 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var edgeSince: Date?
     var awaySince: Date?
     var hotKey: EventHotKeyRef?
+    var editing = false             // the drawing editor is open: the panel is a big window in the middle
+    var picking = false             // a file picker is open: stay put
+    var holdUntil = Date.distantPast // stay open a little after picking files or taking a screenshot
+    var resizeHandle: ResizeHandle!
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -97,7 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         Timer.scheduledTimer(withTimeInterval: 0.07, repeats: true) { [weak self] _ in self?.tick() }
         NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
-            guard let self, !self.pinned, !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
+            guard let self, !self.pinned, !self.editing, !self.picking, Date() >= self.holdUntil,
+                  !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
             self.hide()
         }
         if pinned { show() }
@@ -146,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         handle.onResize = { [weak self] w in self?.resize(to: w) }
         handle.onEnd = { UserDefaults.standard.set(Double(panelWidth), forKey: "width") }
         glass.addSubview(handle)
+        resizeHandle = handle
     }
 
     func screenUnderPointer() -> NSScreen {
@@ -165,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func show(focus: Bool = false) {
+        if editing { panel.makeKey(); return }
         let s = shown ? (panel.screen ?? screenUnderPointer()) : screenUnderPointer()
         if !shown {
             panel.setFrame(hiddenFrame(s), display: false)
@@ -184,13 +191,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func resize(to width: CGFloat) {
+        if editing { return }
         panelWidth = min(max(width, minWidth), maxWidth)
         let s = panel.screen ?? screenUnderPointer()
         panel.setFrame(shownFrame(s), display: true)
     }
 
     func hide() {
-        guard shown else { return }
+        guard shown, !editing else { return }
         shown = false
         let s = panel.screen ?? screenUnderPointer()
         NSAnimationContext.runAnimationGroup({ ctx in
@@ -209,14 +217,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     // Pointer watcher: polling the location needs no Accessibility permission.
     func tick() {
+        if editing { return }
+        if shown && (picking || Date() < holdUntil) { awaySince = nil; return }
         let p = NSEvent.mouseLocation
         if !shown {
             let s = screenUnderPointer()
             let onPeek = pinned && panel.isVisible && panel.frame.contains(p)
             let atEdge = onPeek || (p.x >= s.frame.maxX - 2 && p.y < s.visibleFrame.maxY && p.y > s.frame.minY + 40)
-            if atEdge && NSEvent.pressedMouseButtons == 0 {
+            if atEdge {
+                // also while dragging: drag a screenshot or file to the edge and the column opens to take it
+                let dwell = NSEvent.pressedMouseButtons == 0 ? edgeDwell : 0.35
                 if edgeSince == nil { edgeSince = Date() }
-                if Date().timeIntervalSince(edgeSince!) >= edgeDwell { edgeSince = nil; show() }
+                if Date().timeIntervalSince(edgeSince!) >= dwell { edgeSince = nil; show() }
             } else { edgeSince = nil }
             return
         }
@@ -254,12 +266,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func buildMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "GoodComments")
+        statusItem.button?.image = Self.monkeyTemplate()
         let menu = NSMenu()
         let showItem = NSMenuItem(title: "Show comments", action: #selector(toggle), keyEquivalent: "c")
         showItem.keyEquivalentModifierMask = [.control, .option]
         menu.addItem(showItem)
         menu.addItem(NSMenuItem(title: "Minimize", action: #selector(minimize), keyEquivalent: ""))
+        let shotItem = NSMenuItem(title: "Take a screenshot…", action: #selector(captureFromMenu), keyEquivalent: "s")
+        shotItem.keyEquivalentModifierMask = [.control, .option]
+        menu.addItem(shotItem)
         pinItem = NSMenuItem(title: "Keep open", action: #selector(togglePin), keyEquivalent: "")
         pinItem.state = pinned ? .on : .off
         menu.addItem(pinItem)
@@ -295,6 +310,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         switch action {
         case "togglePin": togglePin()
         case "minimize": minimize()
+        case "capture": capture(target: (body["target"] as? String) ?? "composer")
+        case "editorOpen": enterEditor()
+        case "editorClose": exitEditor()
         default: break
         }
     }
@@ -310,14 +328,93 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     // MARK: global hotkey ⌃⌥C (Carbon hotkeys need no permissions)
 
+    var shotKey: EventHotKeyRef?
+
     func registerHotKey() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { delegate.toggle() }
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var hk = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                              nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
+            DispatchQueue.main.async {
+                if hk.id == 2 { delegate.capture(target: "composer") } else { delegate.toggle() }
+            }
             return noErr
         }, 1, &spec, nil, nil)
-        let id = EventHotKeyID(signature: OSType(0x4743_4D54), id: 1) // "GCMT"
-        RegisterEventHotKey(UInt32(kVK_ANSI_C), UInt32(controlKey | optionKey), id, GetApplicationEventTarget(), 0, &hotKey)
+        let sig = OSType(0x4743_4D54) // "GCMT"
+        RegisterEventHotKey(UInt32(kVK_ANSI_C), UInt32(controlKey | optionKey), EventHotKeyID(signature: sig, id: 1), GetApplicationEventTarget(), 0, &hotKey)
+        RegisterEventHotKey(UInt32(kVK_ANSI_S), UInt32(controlKey | optionKey), EventHotKeyID(signature: sig, id: 2), GetApplicationEventTarget(), 0, &shotKey)
+    }
+
+    // MARK: drawing editor
+
+    /// The column is too narrow to draw in: grow into a big window in the middle of the screen.
+    func enterEditor() {
+        guard !editing else { return }
+        editing = true
+        resizeHandle.isHidden = true
+        let s = panel.screen ?? screenUnderPointer()
+        let v = s.visibleFrame
+        let w = min(v.width * 0.84, 1500)
+        let h = min(v.height * 0.88, 1050)
+        let target = NSRect(x: v.midX - w / 2, y: v.midY - h / 2, width: w, height: h)
+        if !shown {
+            panel.setFrame(hiddenFrame(s), display: false)
+            panel.orderFrontRegardless()
+            shown = true
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.32
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1.0)
+            panel.animator().setFrame(target, display: true)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKey()
+    }
+
+    /// Back to the column at the edge.
+    func exitEditor() {
+        guard editing else { return }
+        editing = false
+        resizeHandle.isHidden = false
+        let s = panel.screen ?? screenUnderPointer()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.3
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 0.8, 0.3, 1.0)
+            panel.animator().setFrame(shownFrame(s), display: true)
+        }
+        awaySince = nil
+    }
+
+    // MARK: screenshots
+
+    /// Hide the panel, let the user pick an area (or press Space for a window), then open it in the page's
+    /// drawing editor. target: "composer" (new comment) or "ask" (the open fix / reopen box).
+    @objc func captureFromMenu() { capture(target: "composer") }
+
+    func capture(target: String) {
+        panel.orderOut(nil)
+        shown = false
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("goodcomments-\(UUID().uuidString).png")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-i", "-x", url.path]       // interactive area/window, no sound
+        p.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.holdUntil = Date().addingTimeInterval(4)
+                self.show(focus: true)
+                let safeTarget = target == "ask" ? "ask" : "composer"
+                if let data = try? Data(contentsOf: url), !data.isEmpty {
+                    try? FileManager.default.removeItem(at: url)
+                    let b64 = data.base64EncodedString()
+                    self.web.evaluateJavaScript("window.gcScreenshot && gcScreenshot('data:image/png;base64,\(b64)', '\(safeTarget)')")
+                } else {
+                    self.web.evaluateJavaScript("window.gcScreenshot && gcScreenshot(null, '\(safeTarget)')")
+                }
+            }
+        }
+        do { try p.run() } catch { show() }
     }
 
     // MARK: local server
@@ -368,6 +465,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return nil
     }
 
+    /// The logo's monkey, hanging from its stick, drawn as a menu bar template (adapts to light/dark).
+    static func monkeyTemplate() -> NSImage {
+        let img = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+            NSColor.black.setFill()
+            NSColor.black.setStroke()
+            NSBezierPath(roundedRect: NSRect(x: 1.5, y: 2, width: 15, height: 2.2), xRadius: 1.1, yRadius: 1.1).fill()  // stick
+            for (from, to) in [(NSPoint(x: 6.6, y: 11), NSPoint(x: 5.2, y: 3.4)), (NSPoint(x: 11.4, y: 11), NSPoint(x: 12.8, y: 3.4))] {
+                let arm = NSBezierPath(); arm.lineWidth = 1.9; arm.lineCapStyle = .round
+                arm.move(to: from); arm.line(to: to); arm.stroke()
+            }
+            NSBezierPath(ovalIn: NSRect(x: 2.6, y: 9.1, width: 3.6, height: 3.6)).fill()     // ears
+            NSBezierPath(ovalIn: NSRect(x: 11.8, y: 9.1, width: 3.6, height: 3.6)).fill()
+            NSBezierPath(ovalIn: NSRect(x: 4.6, y: 7.6, width: 8.8, height: 8.8)).fill()     // head
+            NSGraphicsContext.current?.compositingOperation = .destinationOut               // eyes and smile cut out
+            NSBezierPath(ovalIn: NSRect(x: 6.7, y: 10.4, width: 1.6, height: 1.6)).fill()
+            NSBezierPath(ovalIn: NSRect(x: 9.7, y: 10.4, width: 1.6, height: 1.6)).fill()
+            let smile = NSBezierPath(); smile.lineWidth = 0.9; smile.lineCapStyle = .round
+            smile.move(to: NSPoint(x: 7.3, y: 13.6)); smile.curve(to: NSPoint(x: 10.7, y: 13.6), controlPoint1: NSPoint(x: 8.3, y: 14.8), controlPoint2: NSPoint(x: 9.7, y: 14.8))
+            smile.stroke()
+            return true
+        }
+        img.isTemplate = true
+        img.accessibilityDescription = "GoodComments"
+        return img
+    }
+
     static let offlineHTML = """
     <body style="font:13px system-ui;color:#555;padding:40px 28px;background:transparent">
     <b>GoodComments server isn't running.</b><br><br>Run <code>npm start</code> in the GoodComments folder, then choose Reload from the menu bar icon.</body>
@@ -376,6 +499,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // MARK: web view
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // a file dropped outside a drop zone would replace the column with the file: never
+        if action.request.url?.isFileURL == true { return decisionHandler(.cancel) }
         if let url = action.request.url, action.navigationType == .linkActivated, !url.absoluteString.hasPrefix(base) {
             NSWorkspace.shared.open(url)
             return decisionHandler(.cancel)
@@ -386,6 +511,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url { NSWorkspace.shared.open(url) }
         return nil
+    }
+
+    /// The paperclip buttons (<input type="file">) need a native file picker in a WKWebView.
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let open = NSOpenPanel()
+        open.allowsMultipleSelection = parameters.allowsMultipleSelection
+        open.canChooseDirectories = false
+        open.canChooseFiles = true
+        open.message = "Attach screenshots or documents"
+        open.prompt = "Attach"
+        picking = true
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKey()
+        open.begin { [weak self] response in
+            completionHandler(response == .OK ? open.urls : nil)
+            guard let self else { return }
+            self.picking = false
+            self.holdUntil = Date().addingTimeInterval(4)   // give you time to write the comment
+            self.panel.makeKey()
+        }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {

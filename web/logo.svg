@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>GoodComments</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8f74ff"/><stop offset="1" stop-color="#6a48f0"/></linearGradient>
+    <linearGradient id="stick" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbeed2"/><stop offset="1" stop-color="#e2c693"/></linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bg)"/>
+  <!-- the stick it hangs from -->
+  <rect x="8" y="11" width="48" height="7" rx="3.5" fill="url(#stick)"/>
+  <!-- arms up, hands around the stick -->
+  <path d="M23.5 37 C 18 30, 17 22, 19.5 15.5" fill="none" stroke="#7b4a25" stroke-width="6" stroke-linecap="round"/>
+  <path d="M40.5 37 C 46 30, 47 22, 44.5 15.5" fill="none" stroke="#7b4a25" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="19.5" cy="14.5" r="4.2" fill="#5e3519"/>
+  <circle cx="44.5" cy="14.5" r="4.2" fill="#5e3519"/>
+  <!-- ears -->
+  <circle cx="18.5" cy="38" r="6.2" fill="#7b4a25"/><circle cx="18.5" cy="38" r="3.2" fill="#f4dcb6"/>
+  <circle cx="45.5" cy="38" r="6.2" fill="#7b4a25"/><circle cx="45.5" cy="38" r="3.2" fill="#f4dcb6"/>
+  <!-- head and face -->
+  <circle cx="32" cy="40" r="14" fill="#7b4a25"/>
+  <circle cx="27.6" cy="37" r="5.4" fill="#f4dcb6"/><circle cx="36.4" cy="37" r="5.4" fill="#f4dcb6"/>
+  <ellipse cx="32" cy="44.6" rx="9.6" ry="7.4" fill="#f4dcb6"/>
+  <circle cx="28" cy="37.6" r="1.9" fill="#2b1a0e"/><circle cx="36" cy="37.6" r="1.9" fill="#2b1a0e"/>
+  <circle cx="28.6" cy="36.9" r=".6" fill="#fff"/><circle cx="36.6" cy="36.9" r=".6" fill="#fff"/>
+  <path d="M28 47 Q32 50.4 36 47" fill="none" stroke="#5e3519" stroke-width="1.7" stroke-linecap="round"/>
+</svg>

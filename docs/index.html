@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GoodComments · Comment it. Fix it. Check it off.</title>
 <meta name="description" content="A free, open source feedback tracker for your projects. Comments hang on a column at the edge of your screen: open, fixed by you or your agents, and done when you check them.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='9' y='3' width='14' height='26' rx='4' fill='%237c5cff'/><rect x='14' y='0' width='4' height='8' rx='1.5' fill='%23c9ced8'/></svg>">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="img/icon-256.png">
 <style>
   :root {
     --bg: #f6f7fa; --grid: rgba(20, 30, 60, .05);
@@ -55,8 +56,7 @@
   /* nav */
   nav { display: flex; align-items: center; gap: 22px; padding: 18px 0; }
   .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; text-decoration: none; letter-spacing: -.01em; }
-  .logo { width: 13px; height: 20px; border-radius: 4px; background: var(--fixed); position: relative; }
-  .logo::before { content: ""; position: absolute; left: 4.5px; top: -5px; width: 4px; height: 9px; border-radius: 1.5px; background: linear-gradient(90deg, #e9ebef, #b3b8c2); }
+  .logo { width: 28px; height: 28px; display: block; flex: none; }
   nav .links { margin-left: auto; display: flex; gap: 20px; font-size: 14px; }
   nav .links a { text-decoration: none; color: var(--ink-2); }
   nav .links a:hover { color: var(--ink); }
@@ -185,7 +185,7 @@
 
 <div class="wrap">
   <nav>
-    <a class="brand" href="#"><span class="logo" aria-hidden="true"></span>GoodComments</a>
+    <a class="brand" href="#"><img class="logo" src="logo.svg" alt="" width="28" height="28">GoodComments</a>
     <div class="links">
       <a href="#how">How it works</a>
       <a href="#tour">Screenshots</a>
@@ -213,7 +213,7 @@
     </div>
 
     <div class="demo" id="demo" aria-label="A live demo of the GoodComments column">
-      <div class="head"><span class="logo" aria-hidden="true"></span>GoodComments<span class="live"></span></div>
+      <div class="head"><img class="logo" src="logo.svg" alt="" width="20" height="20" style="width:20px;height:20px">GoodComments<span class="live"></span></div>
       <div class="trunk"></div>
       <div class="label" style="top:58px"><i style="background:var(--open)"></i>Hanging</div>
       <div class="label" style="top:322px"><i style="background:var(--fixed)"></i>To check</div>
@@ -317,6 +317,7 @@ gc add "Footer link 404s" -f shot.png</pre>
 
 <section id="install" class="install">
   <div class="wrap">
+    <img src="logo.svg" alt="" width="88" height="88" style="display:block;margin:0 auto 18px;filter:drop-shadow(0 14px 24px rgba(106,72,240,.35))">
     <h2>Install in one line.</h2>
     <p class="lede">Paste this in Terminal. It downloads GoodComments, adds the <code>gc</code> command, builds the menu bar app and, if you use Claude Code, connects it. Run it again any time to update.</p>
     <div class="oneliner"><code id="cmd-install">curl -fsSL https://raw.githubusercontent.com/sdezubiria/goodcomments/main/install.sh | sh</code><button class="copy" data-copy="cmd-install">Copy</button></div>

@@ -84,8 +84,7 @@ button { cursor: pointer; }
 .top { padding: 14px 14px 10px; display: grid; gap: 10px; border-bottom: 1px solid var(--hair); }
 .brand { display: flex; align-items: center; gap: 8px; }
 .brand h1 { font-size: 13px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
-.logo { width: 12px; height: 18px; border-radius: 4px; background: var(--fixed); position: relative; box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); }
-.logo::before { content: ""; position: absolute; left: 4px; top: -4px; width: 4px; height: 8px; border-radius: 1.5px; background: var(--pin); }
+.logo { width: 22px; height: 22px; display: block; flex: none; }
 .live { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); transition: background .3s; }
 .live.on { background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 20%, transparent); }
 /* status segmented control */
@@ -122,8 +121,8 @@ button { cursor: pointer; }
   padding: 9px 11px; min-height: 38px; max-height: 160px; outline: none; transition: border-color .15s, box-shadow .15s;
 }
 .composer textarea:focus, .composer input:focus, .composer select:focus, dialog input:focus { border-color: color-mix(in srgb, var(--fixed) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fixed) 16%, transparent); }
-.composer-row { display: none; grid-template-columns: 1fr .8fr 1fr auto auto; gap: 6px; }
-.attach { display: grid; place-items: center; width: 30px; border: 1px solid var(--hair); background: var(--field); border-radius: 9px; color: var(--ink-2); cursor: pointer; }
+.composer-row { display: none; grid-template-columns: 1fr .8fr 1fr auto auto auto; gap: 6px; }
+.attach { display: grid; place-items: center; width: 30px; padding: 0; border: 1px solid var(--hair); background: var(--field); border-radius: 9px; color: var(--ink-2); cursor: pointer; }
 .attach:hover { color: var(--ink); border-color: var(--hair-2); }
 .attach svg { width: 14px; height: 14px; }
 .files { display: none; gap: 6px; flex-wrap: wrap; }
@@ -552,3 +551,50 @@ input.invalid::placeholder { color: #d13a40; opacity: .85; }
 .panel-ctl button:hover { color: var(--ink); background: var(--glass-strong); }
 .panel-ctl button svg { width: 13px; height: 13px; }
 .panel-ctl #pin[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+/* ---------- cleaning the pile ---------- */
+.pile-label { display: flex; align-items: center; gap: 8px; }
+.pile-clean {
+  border: 1px solid var(--hair); background: var(--field); color: var(--ink-2); border-radius: 8px;
+  padding: 2px 8px; font: 600 11.5px/1.5 system-ui, -apple-system, sans-serif; cursor: pointer;
+}
+.pile-clean:hover { color: var(--ink); border-color: var(--hair-2); background: var(--glass-strong); }
+.pile .heap.physics.sweeping > * { transition: opacity .6s ease-in .15s; opacity: 0; }
+
+/* =====================================================================
+   Screenshot drawing editor (web/draw.js)
+   ===================================================================== */
+.draw {
+  position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column;
+  background: rgba(14, 16, 22, .78); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: draw-in .18s ease-out;
+}
+@keyframes draw-in { from { opacity: 0; } }
+.draw-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px;
+  background: var(--glass-strong); border-bottom: 1px solid var(--hair); box-shadow: var(--shadow);
+}
+.draw-group { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--field); border: 1px solid var(--hair); }
+.draw-bar button { border: 0; background: transparent; color: var(--ink-2); cursor: pointer; font: 600 12.5px/1 system-ui, -apple-system, sans-serif; }
+.draw-group button, .draw-undo { display: grid; place-items: center; width: 30px; height: 28px; border-radius: 7px; }
+.draw-group button svg, .draw-undo svg { width: 16px; height: 16px; }
+.draw-group button:hover, .draw-undo:hover { color: var(--ink); background: var(--glass-strong); }
+.tools button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.colors button::after { content: ""; width: 15px; height: 15px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+.colors button[aria-pressed="true"]::after { box-shadow: 0 0 0 2px var(--glass-strong), 0 0 0 4px var(--c); }
+.draw-undo { border: 1px solid var(--hair) !important; background: var(--field) !important; }
+.draw-spacer { flex: 1; }
+.draw-cancel { padding: 8px 12px; border-radius: 9px; border: 1px solid var(--hair) !important; background: var(--field) !important; }
+.draw-done { padding: 8px 14px; border-radius: 9px; background: var(--accent) !important; color: var(--accent-ink) !important; }
+.draw-stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; padding: 14px; overflow: hidden; }
+.draw-stage canvas {
+  max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 8px;
+  box-shadow: 0 20px 50px -12px rgba(0,0,0,.6); background: #fff; touch-action: none; cursor: crosshair;
+}
+.draw-stage[data-tool="text"] canvas { cursor: text; }
+.draw-text {
+  position: absolute; z-index: 2; min-width: 120px; padding: 2px 4px; border: 1.5px dashed currentColor; border-radius: 4px;
+  background: rgba(255,255,255,.85); font-weight: 700; outline: none; transform: translateY(-2px);
+}
+.draw-hint { padding: 0 12px 12px; text-align: center; color: rgba(255,255,255,.7); font-size: 12px; }
+.files .file, .ask-files .file { cursor: pointer; }

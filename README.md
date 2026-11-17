@@ -25,16 +25,20 @@ The Mac app lives in the menu bar (speech-bubble icon). Rest the pointer on the 
 ## The board
 Every state lives on one column: comments hang from monkeys on a trunk (open), drop to "To check" when fixed, and fall onto the pile at the bottom when you approve them. Drag and throw the monkeys on the pile; poke the ones on the trunk.
 
+## Cleaning the pile
+Click **🧹 Clean up** on the pile (or `gc clean`) to archive the done comments: they leave the board but stay in the database. ⌘Z (or `gc restore <ids>`) brings them back; `gc list -s done --archived` shows them.
+
 ## Projects
 ```bash
 cd ~/Code/my-repo && gc project add "My repo" --path .
 ```
 Or use **+ Project** in the column (double-click a chip to edit). With a path set, agents and `gc` inside that folder pick the project automatically.
 
-## Screenshots
-Paste (⌘V) or drop images/PDFs into the composer, click the paperclip, or drop them onto any card.
-From the terminal: `gc add "text" -f shot.png` or `gc attach 12 shot.png`. Agents get them as images from `get_comment`.
-Files are stored in the database (8 MB max each), so they move to the cloud with it.
+## Screenshots and files
+- **Take one and draw on it:** press ⌃⌥S (or the camera button), pick an area of the screen, then mark it up with pen, arrow, box, highlighter or text and attach it. Click any pending screenshot to draw on it too.
+- **Paste, drop or attach:** ⌘V, drag files anywhere onto the column (dragging to the screen edge opens it), or use the paperclip. Images, PDFs and documents (Word, Excel, text, zip…) are welcome; web pages, SVGs and scripts aren't.
+- **From the terminal:** `gc add "text" -f shot.png` or `gc attach 12 shot.png spec.docx`. Agents get images from `get_comment`.
+- Files live in the database (8 MB max each), so they move to the cloud with it. The first capture asks for macOS Screen Recording permission.
 
 ## Inbox: comments from email, Slack, WhatsApp, Shortcuts
 Start the server with a secret key: `GOODCOMMENTS_INBOX_KEY=<secret> npm start`. Then anything can POST to

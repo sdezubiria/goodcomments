@@ -51,13 +51,20 @@ export async function api(method, path, body, actor) {
   return data;
 }
 
-const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.heic': 'image/heic', '.pdf': 'application/pdf' };
+const MIME = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.heic': 'image/heic',
+  '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.json': 'application/json', '.zip': 'application/zip',
+  '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.key': 'application/vnd.apple.keynote', '.pages': 'application/vnd.apple.pages', '.numbers': 'application/vnd.apple.numbers',
+  '.mov': 'video/quicktime', '.mp4': 'video/mp4',
+};
 
 /** Attach a file (screenshot, image, PDF) to a comment. */
 export async function uploadFile(id, file, actor) {
   await ensureServer();
-  const type = MIME[extname(file).toLowerCase()];
-  if (!type) throw new Error(`${basename(file)}: only PNG, JPEG, GIF, WebP, HEIC or PDF`);
+  const type = MIME[extname(file).toLowerCase()] || 'application/octet-stream';
   const res = await fetch(`${BASE}/api/comments/${id}/attachments`, {
     method: 'POST',
     headers: headers({ 'content-type': type, 'x-filename': encodeURIComponent(basename(file)) }, actor),

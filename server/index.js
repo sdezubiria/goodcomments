@@ -102,7 +102,7 @@ route('GET', '/api/comments', async (req, url) => {
     if (!p) throw new HttpError(404, `project "${project}" not found`);
     project = p.id;
   }
-  return store.listComments({ project, status: s.get('status'), q: s.get('q'), limit: s.get('limit') });
+  return store.listComments({ project, status: s.get('status'), q: s.get('q'), limit: s.get('limit'), archived: s.get('archived') });
 });
 route('POST', '/api/comments', async (req) => {
   const body = await readJson(req);
@@ -131,11 +131,26 @@ route('POST', '/api/comments/(\\d+)/notes', async (req, url, [id]) => {
 });
 route('DELETE', '/api/comments/(\\d+)', async (req, url, [id]) => { await store.deleteComment(id); broadcast('change', { id: Number(id) }); return NO_CONTENT; });
 
+// Clean the pile: archive done comments (all, { project }, or { ids }); restore with { ids }.
+route('POST', '/api/pile/clean', async (req) => {
+  const body = await readJson(req);
+  const ids = await store.cleanPile({ ...body, actor: actorOf(req, body) });
+  broadcast('change', { pile: 'cleaned' });
+  return { archived: ids };
+});
+route('POST', '/api/pile/restore', async (req) => {
+  const body = await readJson(req);
+  const ids = await store.restorePile({ ...body, actor: actorOf(req, body) });
+  broadcast('change', { pile: 'restored' });
+  return { restored: ids };
+});
+
 // Attachments: send the raw file as the body with its own content-type
 // (image/png, image/jpeg, …, application/pdf) and an optional x-filename header.
 route('POST', '/api/comments/(\\d+)/attachments', async (req, url, [id]) => {
   const type = contentType(req);
-  if (!/^(image\/|application\/pdf)/.test(type)) throw new HttpError(415, 'send the file as the body with an image/* or application/pdf content-type');
+  // the x-filename header can't be sent by a plain cross-site form, so other sites can't post files here
+  if (req.headers['x-filename'] === undefined) throw new HttpError(400, 'send the file name in an x-filename header');
   const data = await readBody(req, store.MAX_ATTACHMENT + 1);
   const name = decodeURIComponent(req.headers['x-filename'] || '') || null;
   const a = await store.addAttachment(id, { name, type, data, actor: actorOf(req) });
@@ -203,10 +218,13 @@ const server = http.createServer(async (req, res) => {
       const att = req.method === 'GET' && url.pathname.match(/^\/api\/attachments\/(\d+)$/);
       if (att) {
         const a = await store.getAttachment(att[1]);
+        // images and PDFs open in place; any other document downloads, sandboxed
+        const inline = /^(image\/(png|jpeg|gif|webp|heic)|application\/pdf)$/.test(a.type);
         res.writeHead(200, {
           'content-type': a.type,
           'content-length': a.data.length,
-          'content-disposition': `inline; filename="${encodeURIComponent(a.name)}"`,
+          'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(a.name)}`,
+          'content-security-policy': 'sandbox',
           'x-content-type-options': 'nosniff',
           'cache-control': 'private, max-age=31536000, immutable',
         });

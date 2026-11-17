@@ -94,6 +94,33 @@ export function kick(el, strength = 1) {
   wake();
 }
 
+/** Clean-up: everything gets flung up and out of the pile. */
+export function sweep() {
+  if (!heap) return;
+  heap.classList.add('sweeping');
+  for (const b of bodies.values()) {
+    b.frozen = false;
+    b.escape = true;
+    b.vy = -900 - Math.random() * 700;
+    b.vx = (Math.random() - 0.5) * 1100;
+  }
+  wake();
+}
+
+/** The sweep didn't go through: let everything fall back in. */
+export function unsweep() {
+  if (!heap) return;
+  heap.classList.remove('sweeping');
+  for (const b of bodies.values()) { b.escape = false; b.y = Math.min(b.y, -20); }
+  wake();
+}
+
+/** Bananas aren't comments; cleaning the pile throws them away too. */
+export function clearBananas() {
+  for (const [k, b] of [...bodies]) if (k.startsWith('b')) { b.el.remove(); bodies.delete(k); }
+  // (the 'sweeping' class goes away on the next render, together with the archived heads)
+}
+
 /** A banana lands on the pile at this screen x. */
 export function addBanana(clientX) {
   if (!heap) return;
@@ -173,7 +200,8 @@ function tick(t) {
     draw(b);
     if (!b.frozen) fastest = Math.max(fastest, Math.abs(b.vx), Math.abs(b.vy));
   }
-  calm = fastest < 12 && !drag ? calm + 1 : 0;
+  const flying = [...bodies.values()].some((b) => b.escape && b.y < H + 200);
+  calm = fastest < 12 && !drag && !flying ? calm + 1 : 0;
   if (calm > 40) {                       // everything has settled: stop until poked
     for (const b of bodies.values()) { b.vx = 0; b.vy = 0; }
     return;
@@ -239,6 +267,7 @@ function step(dt) {
   // floor and walls; rolling turns the heads
   for (const b of list) {
     if (b.frozen || b === drag?.b) continue;
+    if (b.escape) { b.a += (b.vx * dt) / b.r; continue; }   // being swept away: nothing holds it in
     if (b.y + b.r > H) {
       b.y = H - b.r;
       b.vy = Math.abs(b.vy) > 80 ? -b.vy * FLOOR_BOUNCE : 0;

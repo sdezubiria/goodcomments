@@ -1,4 +1,5 @@
 import * as pile from './pile.js';
+import { openEditor as openDrawEditor, isOpen as drawing, undo as drawUndo, grabScreen } from './draw.js';
 const $ = (s, el = document) => el.querySelector(s);
 const params = new URLSearchParams(location.search);
 if (params.has('embed')) document.documentElement.classList.add('embed');
@@ -81,7 +82,7 @@ function clearAskFiles() {
 async function addAskFiles(list) {
   if (!state.asking) return 0;
   const files = (await Promise.all(imageFiles(list).map(prepareFile))).filter(Boolean);
-  for (const f of files) state.askFiles.push(Object.assign(f, { url: f.type.startsWith('image/') ? URL.createObjectURL(f) : null }));
+  for (const f of files) state.askFiles.push(Object.assign(f, { url: isImage(f) ? URL.createObjectURL(f) : null }));
   if (files.length) {
     const input = $(`#ask-${state.asking.id} input:not([type=file])`);
     const text = input?.value;
@@ -93,7 +94,11 @@ async function addAskFiles(list) {
   return files.length;
 }
 
-const imageFiles = (list) => [...(list || [])].filter((f) => /^image\/|application\/pdf/.test(f.type));
+// any file can be attached except web pages, SVGs and scripts (the server refuses those too)
+const BLOCKED = /^(text\/html|application\/xhtml|image\/svg|text\/javascript|application\/(x-)?javascript)/;
+const imageFiles = (list) => [...(list || [])].filter((f) => f.size > 0 && !BLOCKED.test(f.type));
+const isImage = (f) => (f.type || '').startsWith('image/');
+const extOf = (name) => ((name || '').split('.').pop() || 'file').slice(0, 4).toUpperCase();
 const SUPPORTED = /^(image\/(png|jpeg|gif|webp|heic)|application\/pdf)$/;
 
 /** Images from a paste. Safari / the Mac panel often expose them only as clipboard items, not files. */
@@ -111,6 +116,7 @@ function clipboardFiles(cd) {
 /** Give pasted images a name and turn formats the server doesn't take (TIFF, BMP…) into PNG. */
 async function prepareFile(f) {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+  if (!isImage(f)) return f;                                // documents go as they are
   if (SUPPORTED.test(f.type)) {
     return !f.name || f.name === 'image.png' ? new File([f], `screenshot-${stamp}.${f.type.split('/')[1].replace('jpeg', 'jpg')}`, { type: f.type }) : f;
   }
@@ -159,6 +165,18 @@ function toast(msg) {
   clearTimeout(toast.t);
   toast.t = setTimeout(() => t.classList.remove('show'), 1800);
 }
+
+// ---------- names: comments are called by their text, not their number ----------
+function shortText(text, max = 38) {
+  const line = String(text || '').split('\n')[0].trim().replace(/\s+/g, ' ');
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max);
+  return cut.slice(0, cut.lastIndexOf(' ') > max * 0.6 ? cut.lastIndexOf(' ') : max).replace(/[\s,.;:–-]+$/, '') + '…';
+}
+const nameOf = (idOrComment) => {
+  const c = typeof idOrComment === 'object' ? idOrComment : state.comments.find((x) => x.id === Number(idOrComment));
+  return c ? `“${shortText(c.body)}”` : 'That comment';
+};
 
 // ---------- render ----------
 function render() {
@@ -213,10 +231,10 @@ function renderBoard() {
 
   const newest = state.moved?.status === 'done' ? state.moved.id : null;
   const heap = done.slice(0, 60).map((c) =>
-    `<i data-key="c${c.id}" class="${c.id === newest ? 'new' : ''}" style="--pc:${esc(c.project_color || 'var(--ink-3)')};--r:${tilt(c.id)}deg" title="#${c.id} ${esc(c.body.slice(0, 60))}"></i>`).join('');
+    `<i data-key="c${c.id}" class="${c.id === newest ? 'new' : ''}" style="--pc:${esc(c.project_color || 'var(--ink-3)')};--r:${tilt(c.id)}deg" title="${esc(shortText(c.body, 60))}"></i>`).join('');
   const pileHtml = `<div class="pile" data-act="toggle-done" style="--fill:${pct}" title="Drag the monkeys around · click empty space to list what's done">
          <span class="heap physics">${heap}</span><span class="ground"></span>
-         <span class="pile-label">${done.length} done · ${pct}%</span></div>`;
+         <span class="pile-label">${done.length} done · ${pct}%${done.length ? ' <button class="pile-clean" data-act="clean-pile" title="Clean the pile: archive the done comments (⌘Z to undo)">🧹 Clean up</button>' : ''}</span></div>`;
   const doneShown = state.allDone ? done : [];
   const doneZone = zone('done', doneShown, pileHtml, done.length).replace('</ol>', `</ol>${done.length ? `<button class="act show-done" data-act="toggle-done">${state.allDone ? 'Hide done' : `Show ${done.length} done`}</button>` : ''}`);
 
@@ -272,6 +290,7 @@ function patchItems(html) {
 const shotHtml = (a) => a.type.startsWith('image/')
   ? `<a class="shot" href="${withToken(`/api/attachments/${a.id}`)}" target="_blank" title="${esc(a.name)}"><img src="${withToken(`/api/attachments/${a.id}`)}" alt="${esc(a.name)}" loading="lazy"><button class="x" data-detach="${a.id}" title="Remove">✕</button></a>`
   : `<a class="shot pdf" href="${withToken(`/api/attachments/${a.id}`)}" target="_blank">${esc(a.name)}<button class="x" data-detach="${a.id}" title="Remove">✕</button></a>`;
+const camera = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h2l1.2-1.8h4.6l1.2 1.8h2v7h-11z"/><circle cx="8" cy="8.8" r="2.3"/></svg>';
 const paperclip = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10.5 4.5L5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2"/></svg>';
 
 function renderItem(c, i) {
@@ -301,10 +320,11 @@ function renderItem(c, i) {
   const ask = asking ? `
     <form class="ask ${asking}" id="ask-${c.id}" data-kind="${asking}" novalidate>
       <input placeholder="${asking === 'fix' ? 'What did you change?' : 'What’s still wrong?'}">
-      <label class="act icon ask-clip" title="Attach screenshots (or paste ⌘V / drop them here)"><input type="file" accept="image/*,application/pdf" multiple hidden data-ask-file>${paperclip}</label>
+      <button type="button" class="act icon ask-clip" data-ask-shot title="Take a screenshot and draw on it">${camera}</button>
+      <label class="act icon ask-clip" title="Attach screenshots (or paste ⌘V / drop them here)"><input type="file" multiple hidden data-ask-file>${paperclip}</label>
       <button class="act ${asking === 'fix' ? 'fixit' : 'reopen'}">${asking === 'fix' ? 'Fixed' : 'Reopen'}</button>
       <button type="button" class="act icon" data-act="cancel-ask" title="Cancel">✕</button>
-      <div class="ask-files${state.askFiles.length ? ' has' : ''}">${state.askFiles.map((f, k) => `<span class="file" style="${f.url ? `background-image:url(${f.url})` : ''}">${f.url ? '' : 'PDF'}<button type="button" data-ask-rm="${k}" title="Remove">✕</button></span>`).join('')}
+      <div class="ask-files${state.askFiles.length ? ' has' : ''}">${state.askFiles.map((f, k) => `<span class="file" data-ask-edit="${k}" title="Click to draw on it" style="${f.url ? `background-image:url(${f.url})` : ''}">${f.url ? '' : extOf(f.name)}<button type="button" data-ask-rm="${k}" title="Remove">✕</button></span>`).join('')}
         <span class="ask-hint">${state.askFiles.length ? '' : 'Paste or drop screenshots here'}</span></div>
     </form>` : '';
 
@@ -341,7 +361,7 @@ function renderItem(c, i) {
           <span class="proj">${esc(c.project_name || 'No project')}</span>
           ${c.source ? `<span class="src">${esc(c.source)}</span>` : ''}
           <span>${ago(c.status === 'done' ? c.done_at : c.status === 'fixed' ? c.fixed_at : c.created_at)}</span>
-          <span class="id">#${c.id}</span>
+
         </div>
         <div class="body">${esc(c.body)}</div>
         ${c.location ? (isUrl(c.location) ? `<a class="where" href="${esc(c.location)}" target="_blank" rel="noopener">${esc(c.location)}</a>` : `<span class="where">${esc(c.location)}</span>`) : ''}
@@ -424,8 +444,9 @@ async function boardMove(li, id, status, note, { remote = false } = {}) {
   } else {
     pile.release(landing);
   }
-  if (remote) toast({ fixed: `#${id} was marked fixed`, done: `#${id} was approved`, open: `#${id} was reopened` }[status]);
-  else if (!quietToast) toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
+  const n = nameOf(id);
+  if (remote) toast({ fixed: `${n} was marked fixed`, done: `${n} was approved`, open: `${n} was reopened` }[status]);
+  else if (!quietToast) toast({ fixed: `${n} moved to To check`, done: `${n} is done ✓`, open: `${n} reopened` }[status]);
   quietToast = false;
   settle(1200 * SLOW);
   return true;
@@ -644,7 +665,7 @@ async function changeStatus(id, status, note, { from = 'user' } = {}) {
       state.asking = null;
       state.moved = { id, status };
       await sleep(300);
-      if (from === 'user') toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
+      if (from === 'user') toast({ fixed: `${nameOf(id)} moved to To check`, done: `${nameOf(id)} is done ✓`, open: `${nameOf(id)} reopened` }[status]);
       await load();
       ok = true;
     } catch (e) { li?.classList.remove('leaving'); toast(e.message); ok = false; }
@@ -656,24 +677,62 @@ async function changeStatus(id, status, note, { from = 'user' } = {}) {
   return ok;
 }
 
+/** Clean the pile: the monkeys get swept off and the done comments are archived (⌘Z brings them back). */
+async function cleanPile() {
+  if (!document.querySelector('.heap.physics > *')) return toast('The pile is already clean');
+  state.moving = true;
+  pile.sweep();
+  await sleep(700);
+  try {
+    const { archived } = await api('POST', '/api/pile/clean', { project: state.project || undefined });
+    pile.clearBananas();
+    state.bananas = 0;
+    if (archived.length) { undoStack.push({ type: 'clean', ids: archived }); redoStack.length = 0; }
+    state.moving = false;
+    state.allDone = false;
+    await load();
+    toast(archived.length ? `Cleaned the pile: ${archived.length} archived · ⌘Z to undo` : 'The pile is already clean');
+  } catch (e) {
+    pile.unsweep();
+    state.moving = false;
+    toast(e.message);
+  }
+}
+
 // Going back to "fixed" needs a note: reuse the one it had.
 const noteFor = (status, step) => (status === 'fixed' ? step.fixNote || step.note || 'Restored with undo' : undefined);
 
 async function undo() {
   const step = undoStack.pop();
   if (!step) return toast('Nothing to undo');
+  if (step.type === 'clean') {
+    try {
+      const { restored } = await api('POST', '/api/pile/restore', { ids: step.ids });
+      redoStack.push(step);
+      await load();
+      return toast(`Undo: ${restored.length} back on the pile`);
+    } catch (e) { undoStack.push(step); return toast(e.message); }
+  }
   if (await changeStatus(step.id, step.from, noteFor(step.from, step), { from: 'undo' })) {
     redoStack.push(step);
-    toast(`Undo: #${step.id} back to ${LABEL[step.from]}`);
+    toast(`Undo: ${nameOf(step.id)} back to ${LABEL[step.from]}`);
   } else undoStack.push(step);
 }
 
 async function redo() {
   const step = redoStack.pop();
   if (!step) return toast('Nothing to redo');
+  if (step.type === 'clean') {
+    try {
+      await api('POST', '/api/pile/clean', { ids: step.ids });
+      undoStack.push(step);
+      await load();
+      return toast(`Redo: cleaned ${step.ids.length} off the pile`);
+    } catch (e) { redoStack.push(step); return toast(e.message); }
+  }
   if (await changeStatus(step.id, step.to, noteFor(step.to, step), { from: 'redo' })) {
     undoStack.push(step);
-    toast(`Redo: #${step.id} to ${LABEL[step.to]}`);
+    toast(`Redo: ${nameOf(step.id)} to ${LABEL[step.to]}`);
   } else redoStack.push(step);
 }
 
@@ -686,6 +745,7 @@ document.addEventListener('keydown', (ev) => {
 });
 /** Called by the Mac panel for ⌘Z / ⌘⇧Z. Returns 'native' when a text field should undo itself. */
 window.gcUndo = (redoing) => {
+  if (drawing()) { if (!redoing) drawUndo(); return 'handled'; }
   if (isEditable(document.activeElement)) return 'native';
   (redoing ? redo : undo)();
   return 'handled';
@@ -698,6 +758,7 @@ $('#items').addEventListener('mousedown', (ev) => {
 $('#items').addEventListener('click', async (ev) => {
   const monkey = ev.target.closest('.monkey');
   if (monkey) return poke(monkey);
+  if (ev.target.closest('[data-act="clean-pile"]')) return cleanPile();
   if (ev.target.closest('.heap [data-key]') || pile.recentlyTouched()) return;
   if (ev.target.closest('[data-act="toggle-done"]')) { state.allDone = !state.allDone; return render(); }
   const li = ev.target.closest('.item');
@@ -717,6 +778,18 @@ $('#items').addEventListener('click', async (ev) => {
   // (blur first: Safari keeps focus in the text field when a button is clicked, which would hold the re-render)
   if (act === 'ask-fix' || act === 'ask-reopen') { document.activeElement?.blur(); clearAskFiles(); state.asking = { id, kind: act.slice(4) }; return render(); }
   if (act === 'cancel-ask') { document.activeElement?.blur(); clearAskFiles(); state.asking = null; return render(); }
+  if (ev.target.closest('[data-ask-shot]')) { ev.preventDefault(); return takeScreenshot('ask'); }
+  const askEdit = !ev.target.closest('[data-ask-rm]') && ev.target.closest('[data-ask-edit]')?.dataset.askEdit;
+  if (askEdit !== undefined && askEdit !== false && state.askFiles[Number(askEdit)]?.type.startsWith('image/')) {
+    ev.preventDefault();
+    const k = Number(askEdit);
+    const f = state.askFiles[k];
+    return openEditor(f, { onDone: (edited) => {
+      if (f.url) URL.revokeObjectURL(f.url);
+      state.askFiles[k] = Object.assign(edited, { url: URL.createObjectURL(edited) });
+      render();
+    } });
+  }
   const askRm = ev.target.closest('[data-ask-rm]')?.dataset.askRm;
   if (askRm !== undefined) {
     ev.preventDefault();
@@ -731,12 +804,12 @@ $('#items').addEventListener('click', async (ev) => {
   }
   if (act === 'done') return changeStatus(id, 'done');
   if (act === 'copy') {
-    const text = `GoodComments #${c.id} (${c.project_id || 'no project'}): ${c.body}${c.location ? `\nWhere: ${c.location}` : ''}\nWhen it's fixed, run: gc fix ${c.id} "what you changed"  (or MCP tool mark_fixed)`;
+    const text = `GoodComments (${c.project_id || 'no project'}): ${c.body}${c.location ? `\nWhere: ${c.location}` : ''}\nWhen it's fixed, run: gc fix ${c.id} "what you changed"  (or MCP tool mark_fixed)`;
     await navigator.clipboard.writeText(text).then(() => toast('Copied for an agent'), () => toast('Copy failed'));
     return;
   }
   if (act === 'delete') {
-    if (!confirm(`Delete #${id}? This can't be undone.`)) return;
+    if (!confirm(`Delete ${nameOf(id)}? This can't be undone.`)) return;
     li.classList.add('leaving');
     await api('DELETE', `/api/comments/${id}`).catch((e) => toast(e.message));
     return load();
@@ -841,9 +914,9 @@ $('#items').addEventListener('drop', async (ev) => {
   li.classList.remove('dragging');
   if (state.asking && Number(li.dataset.id) === state.asking.id) return addAskFiles(ev.dataTransfer.files);
   const files = (await Promise.all(imageFiles(ev.dataTransfer.files).map(prepareFile))).filter(Boolean);
-  if (!files.length) return toast('Only images and PDFs');
+  if (!files.length) return toast('Nothing to attach there');
   await uploadFiles(li.dataset.id, files);
-  toast(`Attached ${files.length} to #${li.dataset.id}`);
+  toast(`Attached ${files.length} to ${nameOf(li.dataset.id)}`);
   load();
 });
 
@@ -864,24 +937,32 @@ let pendingFiles = [];
 function renderFiles() {
   const box = $('#c-files');
   box.classList.toggle('has', pendingFiles.length > 0);
-  box.innerHTML = pendingFiles.map((f, i) => `<span class="file" style="${f.url ? `background-image:url(${f.url})` : ''}">${f.url ? '' : 'PDF'}<button type="button" data-rm="${i}">✕</button></span>`).join('');
+  box.innerHTML = pendingFiles.map((f, i) => `<span class="file" data-edit="${i}" title="Click to draw on it" style="${f.url ? `background-image:url(${f.url})` : ''}">${f.url ? '' : extOf(f.name)}<button type="button" data-rm="${i}">✕</button></span>`).join('');
 }
 async function addFiles(list) {
   const files = (await Promise.all(imageFiles(list).map(prepareFile))).filter(Boolean);
-  for (const f of files) pendingFiles.push(Object.assign(f, { url: f.type.startsWith('image/') ? URL.createObjectURL(f) : null }));
+  for (const f of files) pendingFiles.push(Object.assign(f, { url: isImage(f) ? URL.createObjectURL(f) : null }));
   if (files.length) { composer.classList.add('open'); renderFiles(); body.focus(); }
   return files.length;
 }
 $('#c-files').addEventListener('click', (ev) => {
   const i = ev.target.dataset.rm;
-  if (i === undefined) return;
-  pendingFiles.splice(Number(i), 1);
-  renderFiles();
+  if (i !== undefined) { pendingFiles.splice(Number(i), 1); return renderFiles(); }
+  const e = ev.target.closest('[data-edit]')?.dataset.edit;
+  const f = e !== undefined && pendingFiles[Number(e)];
+  if (!f || !f.type.startsWith('image/')) return;
+  openEditor(f, { onDone: (edited) => {
+    if (f.url) URL.revokeObjectURL(f.url);
+    pendingFiles[Number(e)] = Object.assign(edited, { url: URL.createObjectURL(edited) });
+    renderFiles();
+  } });
 });
+$('#c-shot').addEventListener('click', () => takeScreenshot('composer'));
 $('#c-file').addEventListener('change', (ev) => { addFiles(ev.target.files); ev.target.value = ''; body.focus(); });
 // Paste a screenshot anywhere in the column: it goes to the open card if one is
 // expanded (and you're not typing in the composer), otherwise to a new comment.
 document.addEventListener('paste', async (ev) => {
+  if (drawing()) return;
   const files = clipboardFiles(ev.clipboardData);
   if (!files.length) return;
   ev.preventDefault();
@@ -893,7 +974,7 @@ document.addEventListener('paste', async (ev) => {
   if (expanded.length === 1 && !composer.contains(document.activeElement)) {
     const ready = (await Promise.all(files.map(prepareFile))).filter(Boolean);
     await uploadFiles(expanded[0], ready);
-    toast(`Attached ${ready.length} to #${expanded[0]}`);
+    toast(`Attached ${ready.length} to ${nameOf(expanded[0])}`);
     await loadDetail(expanded[0]);
     return load();
   }
@@ -916,7 +997,7 @@ composer.addEventListener('submit', async (ev) => {
     pendingFiles = []; renderFiles();
     body.value = ''; $('#c-location').value = ''; grow();
     state.status = 'open'; store.set('status', 'open');
-    toast(`Hung #${c.id}`);
+    toast(`Hung ${nameOf(c)}`);
     await load();
     $('#line').scrollTop = 0;
   } catch (e) { toast(e.message); }
@@ -1012,3 +1093,54 @@ window.gcPanel = ({ pinned }) => {
   b.setAttribute('aria-pressed', String(!!pinned));
   b.title = pinned ? 'Kept open: click so it slides away when you leave it' : 'Keep open';
 };
+
+// ---------- screenshots: capture, draw, attach ----------
+/**
+ * Open the drawing editor. Inside the Mac panel the column is too narrow to draw in,
+ * so the app grows the panel into a big window in the middle of the screen while it's open.
+ */
+function openEditor(src, opts = {}) {
+  return openDrawEditor(src, {
+    ...opts,
+    onOpen: () => panelBridge?.postMessage({ action: 'editorOpen' }),
+    onClose: () => panelBridge?.postMessage({ action: 'editorClose' }),
+  });
+}
+
+/** target: 'composer' (a new comment) or 'ask' (the open fix / reopen box). */
+async function takeScreenshot(target) {
+  if (panelBridge) return panelBridge.postMessage({ action: 'capture', target });   // Mac app: pick an area of the screen
+  try {
+    drawThenAttach(await grabScreen(), target);                                      // browser: pick a screen, window or tab
+  } catch (e) {
+    if (e?.name !== 'NotAllowedError' && e?.name !== 'AbortError') toast(`Couldn't take a screenshot: ${e.message}`);
+  }
+}
+
+function drawThenAttach(src, target) {
+  openEditor(src, {
+    onDone: async (file) => {
+      if (target === 'ask' && state.asking) await addAskFiles([file]);
+      else { await addFiles([file]); body.focus(); }
+      toast('Screenshot attached');
+    },
+  });
+}
+
+/** The Mac app calls this with the area you picked (or null if you cancelled). */
+window.gcScreenshot = (dataUrl, target) => {
+  if (!dataUrl) return toast('No screenshot taken');
+  drawThenAttach(dataUrl, target);
+};
+
+// ---------- drops anywhere in the column ----------
+// A file dropped outside a card or the composer goes to a new comment (and never makes the page load the file).
+document.addEventListener('dragover', (ev) => {
+  if (ev.dataTransfer?.types?.includes('Files')) ev.preventDefault();
+});
+document.addEventListener('drop', (ev) => {
+  if (!ev.dataTransfer?.types?.includes('Files')) return;
+  ev.preventDefault();
+  if (ev.target.closest?.('#items .item, #composer, .draw')) return;   // handled there
+  addFiles(ev.dataTransfer.files).then((n) => n && toast(`${n} file${n > 1 ? 's' : ''} added to a new comment`));
+});

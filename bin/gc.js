@@ -16,6 +16,9 @@ const HELP = `gc — track feedback: open → fixed → done
   gc note <id> "text"
   gc edit <id> [-b body] [-p project] [-s source] [-l where]
   gc rm <id>
+  gc clean [-p project|--all]        archive the done comments (clean the pile)
+  gc restore <id…>                    put archived comments back on the pile
+  gc list -s done --archived          see what's been cleaned off
 
   gc projects
   gc project add "Name" [--path dir] [--color #hex]   (--path . = this folder)
@@ -86,6 +89,7 @@ async function main() {
       const qs = new URLSearchParams({ status });
       if (p) qs.set('project', p.id);
       if (opt.query) qs.set('q', opt.query);
+      if (opt.archived) qs.set('archived', 'only');
       const list = await api('GET', `/api/comments?${qs}`);
       if (opt.json) return print(list, opt);
       const where = p ? p.name : 'all projects';
@@ -140,6 +144,17 @@ async function main() {
       if (!files.length) throw new Error('usage: gc attach <id> <file…>');
       for (const f of files) await uploadFile(need(id), f);
       return console.log(`Attached ${files.length} file(s) to #${id}`);
+    }
+    case 'clean': {
+      const p = await scope(opt);
+      const { archived } = await api('POST', '/api/pile/clean', { project: p?.id });
+      return console.log(archived.length ? `Cleaned the pile${p ? ` of ${p.name}` : ''}: ${archived.length} done comment(s) archived (gc restore ${archived.join(' ')})` : 'The pile is already clean.');
+    }
+    case 'restore': {
+      const ids = pos.map((x) => need(x));
+      if (!ids.length) throw new Error('usage: gc restore <id…>');
+      const { restored } = await api('POST', '/api/pile/restore', { ids });
+      return console.log(`Restored ${restored.length} to the pile`);
     }
     case 'rm': {
       await api('DELETE', `/api/comments/${need(id)}`);

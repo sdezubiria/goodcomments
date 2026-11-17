@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GoodComments</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='9' y='3' width='14' height='26' rx='4' fill='%237c5cff'/><rect x='14' y='0' width='4' height='8' rx='1.5' fill='%23c9ced8'/></svg>">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -15,7 +15,7 @@
   <aside class="column" id="column">
     <header class="top">
       <div class="brand">
-        <span class="logo" aria-hidden="true"></span>
+        <img class="logo" src="logo.svg" alt="" width="22" height="22">
         <h1>GoodComments</h1>
         <span class="live" id="live" title="Live"></span>
         <div class="panel-ctl" id="panel-ctl" hidden>
@@ -39,7 +39,8 @@
           <select id="c-project" aria-label="Project"></select>
           <input id="c-source" list="sources" placeholder="From…" aria-label="Source">
           <input id="c-location" placeholder="Where (url, page…)" aria-label="Where">
-          <label class="attach" title="Attach screenshots"><input type="file" id="c-file" accept="image/*,application/pdf" multiple hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10.5 4.5L5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2"/></svg></label>
+          <button type="button" class="attach" id="c-shot" title="Take a screenshot and draw on it (⌃⌥S)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h2l1.2-1.8h4.6l1.2 1.8h2v7h-11z"/><circle cx="8" cy="8.8" r="2.3"/></svg></button>
+          <label class="attach" title="Attach screenshots or documents"><input type="file" id="c-file" multiple hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10.5 4.5L5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2"/></svg></label>
           <button type="submit" class="primary" title="Hang it (⌘↵)">Hang</button>
         </div>
         <datalist id="sources">

@@ -56,6 +56,10 @@ await db.exec(`
   create index if not exists attachments_comment on attachments(comment_id)
 `);
 
+// migrations for databases created by older versions
+const commentCols = await db.all('pragma table_info(comments)');
+if (!commentCols.some((c) => c.name === 'archived_at')) await db.exec('alter table comments add column archived_at text');
+
 const now = () => new Date().toISOString();
 const clean = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
@@ -76,7 +80,7 @@ export async function listProjects() {
       sum(c.status = 'open')  as open,
       sum(c.status = 'fixed') as fixed,
       sum(c.status = 'done')  as done
-    from projects p left join comments c on c.project_id = p.id
+    from projects p left join comments c on c.project_id = p.id and c.archived_at is null
     group by p.id order by p.name collate nocase
   `);
   return rows.map((p) => ({ ...p, open: p.open || 0, fixed: p.fixed || 0, done: p.done || 0 }));
@@ -144,9 +148,12 @@ const SELECT = `
 
 const withAttachments = (c) => c && { ...c, attachments: JSON.parse(c.attachments || '[]') };
 
-export async function listComments({ project, status, q, limit = 500 } = {}) {
+export async function listComments({ project, status, q, limit = 500, archived } = {}) {
   const where = [];
   const args = [];
+  // archived (cleaned off the pile) comments are hidden unless asked for
+  if (archived === 'only') where.push('c.archived_at is not null');
+  else if (archived !== 'all') where.push('c.archived_at is null');
   if (project) { where.push('c.project_id = ?'); args.push(project); }
   if (status && status !== 'all') {
     const list = String(status).split(',').filter((s) => STATUSES.includes(s));
@@ -221,6 +228,7 @@ export async function setStatus(id, { status, note, actor }) {
   if (c.status === status) throw new HttpError(409, `comment #${c.id} is already ${status}`);
   if (status === 'fixed' && !clean(note)) throw new HttpError(400, 'a note describing the fix is required');
   const t = now();
+  if (c.archived_at) await db.run('update comments set archived_at=null where id=?', [c.id]);
   if (status === 'fixed') {
     await db.run('update comments set status=?, fix_note=?, fixed_by=?, fixed_at=?, done_at=null, updated_at=? where id=?',
       ['fixed', clean(note), clean(actor), t, t, c.id]);
@@ -246,12 +254,47 @@ export async function deleteComment(id) {
   await db.run('delete from comments where id = ?', [c.id]);
 }
 
+// ---------- cleaning the pile ----------
+
+/** Archive done comments (all, one project's, or the given ids). Returns the ids that were archived. */
+export async function cleanPile({ project, ids, actor } = {}) {
+  let rows;
+  if (Array.isArray(ids) && ids.length) {
+    const list = ids.map(Number).filter(Boolean);
+    rows = await db.all(`select id from comments where status = 'done' and archived_at is null and id in (${list.map(() => '?').join(',')})`, list);
+  } else if (project) {
+    rows = await db.all(`select id from comments where status = 'done' and archived_at is null and project_id = ?`, [await projectIdFrom(project)]);
+  } else {
+    rows = await db.all(`select id from comments where status = 'done' and archived_at is null`);
+  }
+  const t = now();
+  for (const { id } of rows) {
+    await db.run('update comments set archived_at = ?, updated_at = ? where id = ?', [t, t, id]);
+    await logEvent(id, 'archived', actor, null);
+  }
+  return rows.map((r) => r.id);
+}
+
+/** Put archived comments back on the pile. */
+export async function restorePile({ ids, actor }) {
+  const list = (ids || []).map(Number).filter(Boolean);
+  if (!list.length) return [];
+  const rows = await db.all(`select id from comments where archived_at is not null and id in (${list.map(() => '?').join(',')})`, list);
+  for (const { id } of rows) {
+    await db.run('update comments set archived_at = null, updated_at = ? where id = ?', [now(), id]);
+    await logEvent(id, 'unarchived', actor, null);
+  }
+  return rows.map((r) => r.id);
+}
+
 // ---------- attachments (screenshots, images, PDFs) ----------
 
 export async function addAttachment(commentId, { name, type, data, actor }) {
   const c = await getComment(commentId);
-  if (!/^(image\/(png|jpeg|gif|webp|heic)|application\/pdf)$/.test(type || '')) {
-    throw new HttpError(415, 'attachments must be PNG, JPEG, GIF, WebP, HEIC or PDF');
+  type = (type || '').toLowerCase() || 'application/octet-stream';
+  // anything goes (screenshots, PDFs, Word, Excel, zips…) except types a browser would run as a page or script
+  if (/^(text\/html|application\/xhtml|image\/svg|text\/javascript|application\/(x-)?javascript|application\/ecmascript)/.test(type)) {
+    throw new HttpError(415, 'web pages, SVGs and scripts can’t be attached; zip them first');
   }
   if (!data?.length) throw new HttpError(400, 'empty file');
   if (data.length > MAX_ATTACHMENT) throw new HttpError(413, 'file is larger than 8 MB');
