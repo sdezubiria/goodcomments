@@ -81,3 +81,6 @@ CLI, MCP and the web column only talk to the HTTP API; storage is swappable in `
 3. **Clients:** `export GOODCOMMENTS_URL=https://… GOODCOMMENTS_TOKEN=…` for `gc` and the MCP server. The web column asks for the token once and remembers it.
 
 The Mac edge panel still opens the local server; point it elsewhere by editing `base` in `mac/Sources/GoodCommentsEdge/main.swift`.
+
+## Roadmap and launch
+See [BUSINESS_MODEL.md](BUSINESS_MODEL.md) for how GoodComments is meant to grow: install friction to remove, launch channels and what to measure.
