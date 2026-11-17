@@ -1,7 +1,7 @@
 // Turns whatever a webhook sends (email services, Slack slash commands, Apple
 // Shortcuts, plain text) into a comment. Used by POST /api/inbox.
 
-/** Pull a project tag out of text: "#pabellon …" or "[Pabellón] …". */
+/** Pull a project tag out of text: "#acme …" or "[Acme] …". */
 export function splitProjectTag(text) {
   const m = text.match(/^\s*(?:#([\p{L}\p{N}_-]+)|\[([^\]]+)\])\s*[:\-–]?\s*/u);
   return m ? { tag: m[1] || m[2], rest: text.slice(m[0].length) } : { tag: null, rest: text };

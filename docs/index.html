@@ -158,6 +158,24 @@
   .install details { max-width: 760px; margin: 28px auto 0; text-align: left; }
   .install summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
   .install details pre { margin-top: 12px; }
+  /* see it in action */
+  .gallery { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); gap: 28px; align-items: start; }
+  @media (max-width: 900px) { .gallery { grid-template-columns: minmax(0, 1fr); } }
+  .board-shot { position: sticky; top: 24px; display: block; max-height: 760px; overflow: hidden; border-radius: 22px; border: 1px solid var(--edge); box-shadow: var(--shadow-up); background: #f6f7fa; }
+  .board-shot img { display: block; width: 100%; height: auto; }
+  .board-shot::after { content: "See the whole column ↗"; position: absolute; left: 0; right: 0; bottom: 0; padding: 70px 0 18px; text-align: center; font-size: 13px; font-weight: 650; color: var(--ink-2); background: linear-gradient(transparent, #f6f7fa 70%); }
+  @media (max-width: 900px) { .board-shot { position: relative; max-height: 520px; } }
+  .shots { display: grid; gap: 18px; }
+  .shot { margin: 0; }
+  .shot img { display: block; width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--edge); box-shadow: var(--shadow); background: #f6f7fa; }
+  .shot figcaption { margin-top: 9px; font-size: 15px; color: var(--ink-2); }
+  .shot figcaption b { color: var(--ink); }
+  .term { border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-up); background: var(--code); }
+  .term .bar { display: flex; gap: 6px; padding: 10px 12px; background: rgba(255,255,255,.06); }
+  .term .bar i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
+  .term .bar i:nth-child(2) { background: #febc2e; } .term .bar i:nth-child(3) { background: #28c840; }
+  .term pre { box-shadow: none; border-radius: 0; background: transparent; }
+  .term .p { color: #7ee2a8; } .term .r { color: #ff9b85; } .term .k { color: #b9a8ff; }
   footer { padding: 40px 0 60px; color: var(--ink-3); font-size: 14px; display: flex; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--hair); }
   footer a { color: var(--ink-2); }
 </style>
@@ -170,6 +188,7 @@
     <a class="brand" href="#"><span class="logo" aria-hidden="true"></span>GoodComments</a>
     <div class="links">
       <a href="#how">How it works</a>
+      <a href="#tour">Screenshots</a>
       <a href="#agents">For agents</a>
       <a href="#install">Install</a>
       <a class="gh" href="https://github.com/sdezubiria/goodcomments">GitHub ↗</a>
@@ -217,6 +236,42 @@
         <p>You or an agent makes the change and pulls the stick: the card drops to “To check” with a note on what changed and where.</p></div>
       <div class="tile"><span class="num">03</span><h3><span class="dot" style="background:var(--done)"></span>Done</h3>
         <p>You check it and approve: it falls onto the pile, which grows as the project gets done. Not right yet? Reopen it with a screenshot.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="tour">
+  <div class="wrap">
+    <h2>See it in action.</h2>
+    <p class="lede">Real screenshots of the column (with made-up projects). Everything you need to follow up on feedback, at the edge of your screen.</p>
+    <div class="gallery">
+      <a class="board-shot" href="img/board.jpg" target="_blank" title="Open the full screenshot">
+        <img src="img/board.jpg" alt="The GoodComments column: open comments hanging from monkeys on a trunk, two fixed comments waiting to be checked, and a pile of monkey heads for the done ones" loading="lazy" width="800" height="2923">
+      </a>
+      <div class="shots">
+        <figure class="shot"><img src="img/card-screenshot.jpg" alt="A comment from Acme with a screenshot of the pricing page attached" loading="lazy" width="1040" height="500">
+          <figcaption><b>Screenshots on any comment.</b> Paste with ⌘V or drop images on a card. Agents get them as images too.</figcaption></figure>
+        <figure class="shot"><img src="img/to-check.jpg" alt="A fixed comment with the agent's note and an after screenshot, with Approve and Reopen buttons" loading="lazy" width="1040" height="640">
+          <figcaption><b>Fixed, with proof.</b> The agent says what changed and where, with an “after” shot. Approve in one click.</figcaption></figure>
+        <figure class="shot"><img src="img/reopened.jpg" alt="A reopened comment showing the reason and a screenshot of what is still wrong" loading="lazy" width="1040" height="660">
+          <figcaption><b>Not right yet? Reopen it.</b> Add a note and a screenshot of what's still wrong; it climbs back up the trunk.</figcaption></figure>
+        <figure class="shot"><img src="img/pile.jpg" alt="The pile of monkey heads with the count of done comments" loading="lazy" width="1040" height="420">
+          <figcaption><b>Done piles up.</b> Every approved comment drops onto the pile. Grab the monkeys and throw them around.</figcaption></figure>
+        <div class="term" aria-label="Terminal output of gc show">
+          <div class="bar"><i></i><i></i><i></i></div>
+<pre><span class="p">~/northwind $</span> gc show 17
+#17 · [open] · northwind · from Client · 5m ago
+  Footer still shows the old contact email
+  where: northwind.example/contact
+  attachments: northwind.png
+  fix (claude, 5m ago): Updated footer.html with the new address
+  <span class="r">REOPENED (you, 5m ago): The contact page still has the old address — see northwind.png</span>
+
+<span class="p">~/northwind $</span> gc fix 17 "Replaced the address in contact.html too"
+#17 → fixed</pre>
+        </div>
+        <p class="facts" style="margin:0">What an agent sees from inside the repo: the comment, the reason it came back, and the screenshot.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -314,11 +369,11 @@ cd ~/Code/my-site && gc project add "My site" --path .</pre>
     <circle class="fur" cx="32" cy="32" r="12"/><circle class="face" cx="28.2" cy="29.5" r="4.6"/><circle class="face" cx="35.8" cy="29.5" r="4.6"/><ellipse class="face" cx="32" cy="36" rx="8.2" ry="6.4"/>
     <circle class="eye" cx="28.6" cy="30" r="1.5"/><circle class="eye" cx="35.4" cy="30" r="1.5"/><path class="mouth" d="M28.5 38.2 Q32 40.8 35.5 38.2"/></svg>`;
   const COMMENTS = [
-    ['ARQDIS', '#2f6fec', 'Notion', 'Menu: rename “Investigadores” to “Investigación y creación”', 'Renamed it in menu-publicos.php'],
-    ['Pabellón', '#22a55b', 'WhatsApp', 'Hero video stutters on Safari iOS', 'Re-encoded hero.mp4 with faststart'],
-    ['Nodo', '#d633c4', 'Figma', 'Map legend overlaps the zoom buttons on mobile', 'Moved the legend to bottom-left in map.css'],
-    ['Portfolio', '#f2a93b', 'Email', 'Footer still shows the old contact email', 'Updated footer.php and the contact page'],
-    ['ARQDIS', '#2f6fec', 'Meeting', 'Add the rankings before the “differentials” section', 'Added the rankings block on the home page'],
+    ['Acme', '#2f6fec', 'Email', 'Pricing page: the annual toggle doesn’t update the prices', 'Fixed the toggle handler in pricing.js'],
+    ['Globex', '#22a55b', 'WhatsApp', 'Hero video stutters on Safari iOS', 'Re-encoded hero.mp4 with faststart'],
+    ['Initech', '#d633c4', 'Figma', 'Map legend overlaps the zoom buttons on mobile', 'Moved the legend to bottom-left in map.css'],
+    ['Northwind', '#f2a93b', 'Meeting', 'Footer still shows the old contact email', 'Updated footer.html and the contact page'],
+    ['Acme', '#2f6fec', 'Slack', 'Add customer logos above the signup form', 'Added the logo strip to signup.html'],
   ];
   const fur = (c) => `color-mix(in srgb, ${c} 30%, #7b4a25)`;
   const SLOTS = { open: [92, 200], fixed: 352 };

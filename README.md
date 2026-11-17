@@ -42,9 +42,9 @@ Start the server with a secret key: `GOODCOMMENTS_INBOX_KEY=<secret> npm start`.
 
 | sender | how |
 |---|---|
-| Script / Shortcut | plain text or JSON `{ "text": "...", "project": "pabellon" }` |
+| Script / Shortcut | plain text or JSON `{ "text": "...", "project": "acme" }` |
 | Email (Postmark, Mailgun, …) | point the inbound webhook at the URL; subject + body become the comment, quoted replies are dropped, attachments kept |
-| Slack | create a slash command (e.g. `/gc`) with the URL as its Request URL: `/gc #pabellon the logo is blurry` |
+| Slack | create a slash command (e.g. `/gc`) with the URL as its Request URL: `/gc #acme the logo is blurry` |
 | WhatsApp (iPhone/Mac) | a Shortcut on the Share Sheet: *Get text from input* → *Get contents of URL* (POST, text body) |
 
 Start the text with `#project` or `[Project]` to file it; an unknown tag still saves the comment, without a project.
