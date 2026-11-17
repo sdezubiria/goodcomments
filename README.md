@@ -37,7 +37,7 @@ The Mac app lives in the menu bar (speech-bubble icon). Rest the pointer on the 
 ## The board
 Every state lives on one column: comments hang from monkeys on a trunk (open), drop to "To check" when fixed, and fall onto the pile at the bottom when you approve them. Drag and throw the monkeys on the pile; poke the ones on the trunk.
 
-**Keyboard** (when you're not typing in a field): `j` / `k` move a focus ring between cards, `↵` opens or closes the card, `a` approves it (in To check), `f` marks it fixed, `r` reopens it, `/` searches (filters the cards by text), `esc` clears the focus and the search. Also: `n` new comment, `1` `2` `3` jump to Open / To check / Done, ⌘Z / ⌘⇧Z undo and redo moves.
+**Keyboard** (when you're not typing in a field): `j` / `k` move a focus ring between cards, `↵` opens or closes the card, `a` approves it (in To check), `f` marks it fixed, `r` reopens it, `/` searches (filters the cards by text), `esc` clears the focus and the search. Also: `n` new comment, `1` `2` `3` jump to Open / To check / Done, ⌘Z / ⌘⇧Z undo and redo moves. In the Mac panel, ⌃⌥C opens it with the cursor in the composer: press esc (or click the column) first.
 
 **Open where it is:** a card whose *Where* is a URL gets an **Open** button. If it's a file in the project's folder (`src/header.php:42`, `./notes.md`), **Open** shows it in your editor: set `GOODCOMMENTS_EDITOR` (e.g. `code`, `cursor`, `zed`, `subl` — these jump to the line) before starting the server, or it uses macOS `open`. Only files inside the project's folder open.
 

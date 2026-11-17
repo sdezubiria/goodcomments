@@ -183,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func show(focus: Bool = false) {
-        if editing { panel.makeKey(); return }
+        if editing { panel.makeKey(); panel.makeFirstResponder(web); return }
         let s = shown ? (panel.screen ?? screenUnderPointer()) : screenUnderPointer()
         if !shown {
             panel.setFrame(hiddenFrame(s), display: false)
@@ -197,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             panel.animator().setFrame(shownFrame(s), display: true)
         }
         if focus {
-            panel.makeKey()
+            panel.makeKey(); panel.makeFirstResponder(web)
             web.evaluateJavaScript("document.getElementById('c-body')?.focus()")
         }
     }
@@ -394,7 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             panel.animator().setFrame(target, display: true)
         }
         NSApp.activate(ignoringOtherApps: true)
-        panel.makeKey()
+        panel.makeKey(); panel.makeFirstResponder(web)
     }
 
     /// Back to the column at the edge.
@@ -492,6 +492,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         quick.setFrame(NSRect(x: s.midX - 280, y: s.maxY - 168 - s.height * 0.18, width: 560, height: 168), display: true)
         // a non-activating panel takes the keyboard without pulling you out of the app you're in
         quick.makeKeyAndOrderFront(nil)
+        quick.makeFirstResponder(quickWeb)
         if !quickLoaded {
             ensureServer { [weak self] ok in
                 guard let self else { return }
@@ -572,7 +573,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             self.holdUntil = Date().addingTimeInterval(4)
             self.show(focus: false)
             NSApp.activate(ignoringOtherApps: true)
-            self.panel.makeKey()
+            self.panel.makeKey(); self.panel.makeFirstResponder(self.web)
             if let id { self.web.evaluateJavaScript("window.gcFocus && gcFocus(\(id))") }
         }
         done()
@@ -689,13 +690,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         open.prompt = "Attach"
         picking = true
         NSApp.activate(ignoringOtherApps: true)
-        panel.makeKey()
+        panel.makeKey(); panel.makeFirstResponder(web)
         open.begin { [weak self] response in
             completionHandler(response == .OK ? open.urls : nil)
             guard let self else { return }
             self.picking = false
             self.holdUntil = Date().addingTimeInterval(4)   // give you time to write the comment
-            self.panel.makeKey()
+            self.panel.makeKey(); self.panel.makeFirstResponder(self.web)
         }
     }
 
