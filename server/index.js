@@ -164,11 +164,11 @@ route('POST', '/api/comments/(\\d+)/agent', async (req, url, [id]) => {
       if (now?.status === 'fixed') r.state = 'fixed';
       else if (now && r.state === 'finished') {
         r.state = 'stopped';
-        await store.addNote(cid, { actor: 'claude', note: `The agent stopped without marking it fixed. Log: ${r.log}` }).catch(() => {});
+        await store.addNote(cid, { actor: 'claude', note: `The agent stopped without marking it fixed. Log: ${r.log.replace(homedir(), '~')}` }).catch(() => {});
       } else if (now) {
         const tail = await readFile(r.log, 'utf8').then((t) => t.slice(-2000), () => '');
         if (/not logged in|\/login/i.test(tail)) r.error = 'Claude Code isn’t signed in: run claude once in Terminal and sign in';
-        await store.addNote(cid, { actor: 'claude', note: `The agent run failed${r.error ? `: ${r.error}` : r.code != null ? ` (exit ${r.code})` : ''}. Log: ${r.log}` }).catch(() => {});
+        await store.addNote(cid, { actor: 'claude', note: `The agent run failed${r.error ? `: ${r.error}` : r.code != null ? ` (exit ${r.code})` : ''}. Log: ${r.log.replace(homedir(), '~')}` }).catch(() => {});
       }
       broadcast('agent', { id: cid, ...r });
       broadcast('change', { id: cid });
