@@ -1,0 +1,480 @@
+const $ = (s, el = document) => el.querySelector(s);
+const params = new URLSearchParams(location.search);
+if (params.has('embed')) document.documentElement.classList.add('embed');
+
+const store = {
+  get(k, d) { try { return localStorage.getItem('gc.' + k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('gc.' + k, v); } catch {} },
+};
+
+const state = {
+  status: store.get('status', 'open'),
+  project: store.get('project', ''),
+  projects: [],
+  comments: [],
+  details: new Map(),   // id -> comment with events (when expanded)
+  expanded: new Set(),
+  asking: null,          // { id, kind: 'fix' | 'reopen' }
+  pending: false,
+};
+
+// ---------- api ----------
+// When the server runs with GOODCOMMENTS_TOKEN (cloud mode) we ask for it once and keep it.
+let token = store.get('token', '');
+const authHeaders = () => (token ? { authorization: `Bearer ${token}` } : {});
+const withToken = (url) => (token ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : url);
+
+async function api(method, path, body, raw) {
+  const res = await fetch(path, {
+    method,
+    headers: { ...authHeaders(), ...(raw ? raw.headers : body ? { 'content-type': 'application/json' } : {}) },
+    body: raw ? raw.body : body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    const t = prompt('This GoodComments server needs its access token:');
+    if (t) { token = t.trim(); store.set('token', token); connect(); return api(method, path, body, raw); }
+  }
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+async function load() {
+  const qs = new URLSearchParams({ status: 'all', limit: '3000' });
+  if (state.project) qs.set('project', state.project);
+  const [projects, comments] = await Promise.all([
+    api('GET', '/api/projects'),
+    api('GET', `/api/comments?${qs}`).catch((e) => {
+      if (state.project) { state.project = ''; store.set('project', ''); return api('GET', '/api/comments?status=all&limit=3000'); }
+      throw e;
+    }),
+  ]);
+  state.projects = projects;
+  state.comments = comments;
+  for (const id of state.expanded) await loadDetail(id);
+  render();
+}
+
+async function uploadFiles(id, files) {
+  for (const f of files) {
+    await api('POST', `/api/comments/${id}/attachments`, null, {
+      headers: { 'content-type': f.type || 'application/octet-stream', 'x-filename': encodeURIComponent(f.name || 'screenshot.png') },
+      body: f,
+    }).catch((e) => toast(`${f.name}: ${e.message}`));
+  }
+}
+
+const imageFiles = (list) => [...(list || [])].filter((f) => /^image\/|application\/pdf/.test(f.type));
+const SUPPORTED = /^(image\/(png|jpeg|gif|webp|heic)|application\/pdf)$/;
+
+/** Images from a paste. Safari / the Mac panel often expose them only as clipboard items, not files. */
+function clipboardFiles(cd) {
+  if (!cd) return [];
+  const files = [...(cd.files || [])];
+  if (!files.length) {
+    for (const it of cd.items || []) {
+      if (it.kind === 'file') { const f = it.getAsFile(); if (f) files.push(f); }
+    }
+  }
+  return imageFiles(files);
+}
+
+/** Give pasted images a name and turn formats the server doesn't take (TIFF, BMP…) into PNG. */
+async function prepareFile(f) {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+  if (SUPPORTED.test(f.type)) {
+    return !f.name || f.name === 'image.png' ? new File([f], `screenshot-${stamp}.${f.type.split('/')[1].replace('jpeg', 'jpg')}`, { type: f.type }) : f;
+  }
+  try {
+    const bmp = await createImageBitmap(f);
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    return new File([blob], `screenshot-${stamp}.png`, { type: 'image/png' });
+  } catch {
+    toast(`Can't read ${f.type || 'that file'}`);
+    return null;
+  }
+}
+
+async function loadDetail(id) {
+  try { state.details.set(id, await api('GET', `/api/comments/${id}`)); }
+  catch { state.expanded.delete(id); state.details.delete(id); }
+}
+
+// ---------- helpers ----------
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function ago(iso) {
+  if (!iso) return '';
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 45) return 'now';
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  if (s < 86400 * 30) return `${Math.round(s / 86400)}d`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+const isUrl = (s) => /^https?:\/\//i.test(s || '');
+const icons = {
+  check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg>',
+  wrench: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 2.5a3 3 0 0 0-3.4 4L2.5 11.1a1.3 1.3 0 0 0 1.9 1.9L9 8.4a3 3 0 0 0 4-3.4l-1.8 1.8-1.7-.3-.3-1.7z"/></svg>',
+  undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5L2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H7"/></svg>',
+  copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>',
+  trash: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2"/></svg>',
+};
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// ---------- render ----------
+function render() {
+  // keep the line still while you're typing in it
+  if ($('#line').contains(document.activeElement) && document.activeElement.matches('input')) { state.pending = true; return; }
+  state.pending = false;
+
+  const counts = { open: 0, fixed: 0, done: 0 };
+  for (const c of state.comments) counts[c.status]++;
+  for (const b of $('#states').children) {
+    const s = b.dataset.status;
+    b.setAttribute('aria-selected', String(s === state.status));
+    const badge = b.querySelector('b');
+    badge.textContent = counts[s];
+    badge.classList.toggle('has', s === 'fixed' && counts.fixed > 0);
+  }
+
+  renderProjects();
+
+  const list = state.comments.filter((c) => c.status === state.status);
+  $('#items').innerHTML = list.map((c, i) => renderItem(c, i)).join('');
+  const empty = $('#empty');
+  empty.hidden = list.length > 0;
+  if (!list.length) {
+    empty.innerHTML = {
+      open: '<strong>Nothing on the line</strong>Hang a comment above, or let an agent add one.',
+      fixed: '<strong>Nothing to check</strong>Fixed comments wait here for your OK.',
+      done: '<strong>Nothing dried yet</strong>Approved comments end up here.',
+    }[state.status];
+  }
+  $('.rope').style.setProperty('--rope-h', $('#items').scrollHeight + 60 + 'px');
+
+  if (state.asking) $(`#ask-${state.asking.id} input`)?.focus();
+}
+
+function renderProjects() {
+  const total = (p) => p.open + p.fixed;
+  const chips = [
+    `<button class="chip" data-project="" aria-pressed="${!state.project}">All</button>`,
+    ...state.projects.map((p) => `
+      <button class="chip" data-project="${esc(p.id)}" aria-pressed="${state.project === p.id}" title="${esc(p.path || p.name)} · double-click to edit">
+        <span class="swatch" style="background:${esc(p.color)}"></span>${esc(p.name)}${total(p) ? `<span class="n">${total(p)}</span>` : ''}
+      </button>`),
+    '<button class="chip add" data-new-project title="New project">+ Project</button>',
+  ];
+  $('#projects').innerHTML = chips.join('');
+
+  const sel = $('#c-project');
+  const keep = sel.value || state.project || store.get('lastProject', '');
+  sel.innerHTML = '<option value="">No project</option>' + state.projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  sel.value = state.projects.some((p) => p.id === keep) ? keep : '';
+}
+
+function renderItem(c, i) {
+  const d = state.details.get(c.id);
+  const expanded = state.expanded.has(c.id);
+  const asking = state.asking?.id === c.id ? state.asking.kind : null;
+
+  const actions = {
+    open: `<button class="act fixit" data-act="ask-fix">${icons.wrench}Mark fixed</button>`,
+    fixed: `<button class="act approve" data-act="done">${icons.check}Approve</button>
+            <button class="act" data-act="ask-reopen">${icons.undo}Reopen</button>`,
+    done: `<button class="act" data-act="ask-reopen">${icons.undo}Reopen</button>`,
+  }[c.status];
+
+  const fix = c.fix_note ? `
+    <div class="fix"><span class="who">Fixed${c.fixed_by ? ` by ${esc(c.fixed_by)}` : ''} · ${ago(c.fixed_at)}</span>${esc(c.fix_note)}</div>` : '';
+
+  const ask = asking ? `
+    <form class="ask" id="ask-${c.id}" data-kind="${asking}">
+      <input placeholder="${asking === 'fix' ? 'What did you change? (required)' : 'What’s still wrong? (optional)'}" ${asking === 'fix' ? 'required' : ''}>
+      <button class="act ${asking === 'fix' ? 'fixit' : ''}">${asking === 'fix' ? 'Fixed' : 'Reopen'}</button>
+      <button type="button" class="act icon" data-act="cancel-ask" title="Cancel">✕</button>
+    </form>` : '';
+
+  const history = expanded && d ? `
+    <div class="detail">
+      <ol class="history">${d.events.map((e) => `
+        <li><span class="d ${esc(e.type)}"></span><span>${esc(e.type)}${e.actor ? ` by ${esc(e.actor)}` : ''}<time>${ago(e.at)}</time>${e.note ? `<span class="n">${esc(e.note)}</span>` : ''}</span></li>`).join('')}
+      </ol>
+      <form class="note-form" data-note="${c.id}"><input placeholder="Add a note…"><button class="act">Note</button></form>
+    </div>` : '';
+
+  return `
+    <li class="item status-${c.status}${expanded ? ' expanded' : ''}" data-id="${c.id}" style="--i:${Math.min(i, 12)};--pc:${esc(c.project_color || 'var(--ink-3)')}">
+      <span class="pin" aria-hidden="true"></span>
+      <article class="sheet">
+        <div class="meta">
+          <span class="proj">${esc(c.project_name || 'No project')}</span>
+          ${c.source ? `<span class="src">${esc(c.source)}</span>` : ''}
+          <span>${ago(c.status === 'done' ? c.done_at : c.status === 'fixed' ? c.fixed_at : c.created_at)}</span>
+          <span class="id">#${c.id}</span>
+        </div>
+        <div class="body">${esc(c.body)}</div>
+        ${c.location ? (isUrl(c.location) ? `<a class="where" href="${esc(c.location)}" target="_blank" rel="noopener">${esc(c.location)}</a>` : `<span class="where">${esc(c.location)}</span>`) : ''}
+        ${c.attachments?.length ? `<div class="shots">${c.attachments.map((a) => a.type.startsWith('image/')
+          ? `<a class="shot" href="${withToken(`/api/attachments/${a.id}`)}" target="_blank" title="${esc(a.name)}"><img src="${withToken(`/api/attachments/${a.id}`)}" alt="${esc(a.name)}" loading="lazy"><button class="x" data-detach="${a.id}" title="Remove">✕</button></a>`
+          : `<a class="shot pdf" href="${withToken(`/api/attachments/${a.id}`)}" target="_blank">${esc(a.name)}<button class="x" data-detach="${a.id}" title="Remove">✕</button></a>`).join('')}</div>` : ''}
+        ${fix}
+        ${ask || `<div class="actions">${actions}<span class="spacer"></span>
+          <button class="act icon" data-act="copy" title="Copy for an agent">${icons.copy}</button>
+          <button class="act icon" data-act="delete" title="Delete">${icons.trash}</button></div>`}
+        ${history}
+      </article>
+    </li>`;
+}
+
+// ---------- actions ----------
+async function changeStatus(id, status, note) {
+  const li = $(`.item[data-id="${id}"]`);
+  li?.classList.add('leaving');
+  try {
+    await api('POST', `/api/comments/${id}/status`, { status, note: note || undefined });
+    state.asking = null;
+    await new Promise((r) => setTimeout(r, 300));
+    toast({ fixed: `#${id} moved to “To check”`, done: `#${id} done ✓`, open: `#${id} reopened` }[status]);
+    await load();
+  } catch (e) { li?.classList.remove('leaving'); toast(e.message); }
+}
+
+$('#items').addEventListener('click', async (ev) => {
+  const li = ev.target.closest('.item');
+  if (!li) return;
+  const id = Number(li.dataset.id);
+  const detach = ev.target.closest('[data-detach]')?.dataset.detach;
+  if (detach) {
+    ev.preventDefault();
+    if (!confirm('Remove this attachment?')) return;
+    await api('DELETE', `/api/attachments/${detach}`).catch((e) => toast(e.message));
+    await loadDetail(id);
+    return load();
+  }
+  const act = ev.target.closest('[data-act]')?.dataset.act;
+  const c = state.comments.find((x) => x.id === id);
+
+  if (act === 'ask-fix' || act === 'ask-reopen') { state.asking = { id, kind: act.slice(4) }; return render(); }
+  if (act === 'cancel-ask') { state.asking = null; return render(); }
+  if (act === 'done') return changeStatus(id, 'done');
+  if (act === 'copy') {
+    const text = `GoodComments #${c.id} (${c.project_id || 'no project'}): ${c.body}${c.location ? `\nWhere: ${c.location}` : ''}\nWhen it's fixed, run: gc fix ${c.id} "what you changed"  (or MCP tool mark_fixed)`;
+    await navigator.clipboard.writeText(text).then(() => toast('Copied for an agent'), () => toast('Copy failed'));
+    return;
+  }
+  if (act === 'delete') {
+    if (!confirm(`Delete #${id}? This can't be undone.`)) return;
+    li.classList.add('leaving');
+    await api('DELETE', `/api/comments/${id}`).catch((e) => toast(e.message));
+    return load();
+  }
+  if (act || ev.target.closest('a, input, form, button')) return;
+
+  // click the sheet to see its history
+  if (state.expanded.has(id)) state.expanded.delete(id);
+  else { state.expanded.add(id); await loadDetail(id); }
+  render();
+});
+
+$('#items').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const value = form.querySelector('input').value.trim();
+  if (form.classList.contains('ask')) {
+    const id = Number(form.id.slice(4));
+    form.querySelector('input').blur();
+    return changeStatus(id, form.dataset.kind === 'fix' ? 'fixed' : 'open', value);
+  }
+  if (form.dataset.note && value) {
+    form.querySelector('input').blur();
+    await api('POST', `/api/comments/${form.dataset.note}/notes`, { note: value }).catch((e) => toast(e.message));
+    load();
+  }
+});
+
+$('#items').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && state.asking) { state.asking = null; document.activeElement.blur(); render(); }
+});
+$('#line').addEventListener('focusout', () => setTimeout(() => state.pending && render(), 0));
+
+$('#states').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button');
+  if (!b) return;
+  state.status = b.dataset.status;
+  state.asking = null;
+  store.set('status', state.status);
+  render();
+  $('#line').scrollTop = 0;
+});
+
+$('#projects').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button');
+  if (!b) return;
+  if (b.hasAttribute('data-new-project')) return openProjectDialog();
+  state.project = b.dataset.project;
+  store.set('project', state.project);
+  load();
+});
+$('#projects').addEventListener('dblclick', (ev) => {
+  const b = ev.target.closest('[data-project]');
+  const p = b && state.projects.find((x) => x.id === b.dataset.project);
+  if (p) openProjectDialog(p);
+});
+
+// drop screenshots straight onto a card
+$('#items').addEventListener('dragover', (ev) => {
+  const li = ev.target.closest('.item');
+  if (!li || !ev.dataTransfer.types.includes('Files')) return;
+  ev.preventDefault();
+  document.querySelectorAll('.item.dragging').forEach((x) => x !== li && x.classList.remove('dragging'));
+  li.classList.add('dragging');
+});
+$('#items').addEventListener('dragleave', (ev) => ev.target.closest('.item')?.classList.remove('dragging'));
+$('#items').addEventListener('drop', async (ev) => {
+  const li = ev.target.closest('.item');
+  if (!li) return;
+  ev.preventDefault();
+  li.classList.remove('dragging');
+  const files = (await Promise.all(imageFiles(ev.dataTransfer.files).map(prepareFile))).filter(Boolean);
+  if (!files.length) return toast('Only images and PDFs');
+  await uploadFiles(li.dataset.id, files);
+  toast(`Attached ${files.length} to #${li.dataset.id}`);
+  load();
+});
+
+// ---------- composer ----------
+const composer = $('#composer');
+const body = $('#c-body');
+const grow = () => { body.style.height = 'auto'; body.style.height = Math.min(body.scrollHeight + 2, 160) + 'px'; };
+body.addEventListener('input', grow);
+body.addEventListener('focus', () => composer.classList.add('open'));
+composer.addEventListener('focusout', () => setTimeout(() => {
+  if (!composer.contains(document.activeElement) && !body.value.trim() && !pendingFiles.length) composer.classList.remove('open');
+}, 120));
+body.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); composer.requestSubmit(); }
+  if (ev.key === 'Escape') { body.value = ''; grow(); body.blur(); }
+});
+let pendingFiles = [];
+function renderFiles() {
+  const box = $('#c-files');
+  box.classList.toggle('has', pendingFiles.length > 0);
+  box.innerHTML = pendingFiles.map((f, i) => `<span class="file" style="${f.url ? `background-image:url(${f.url})` : ''}">${f.url ? '' : 'PDF'}<button type="button" data-rm="${i}">✕</button></span>`).join('');
+}
+async function addFiles(list) {
+  const files = (await Promise.all(imageFiles(list).map(prepareFile))).filter(Boolean);
+  for (const f of files) pendingFiles.push(Object.assign(f, { url: f.type.startsWith('image/') ? URL.createObjectURL(f) : null }));
+  if (files.length) { composer.classList.add('open'); renderFiles(); body.focus(); }
+  return files.length;
+}
+$('#c-files').addEventListener('click', (ev) => {
+  const i = ev.target.dataset.rm;
+  if (i === undefined) return;
+  pendingFiles.splice(Number(i), 1);
+  renderFiles();
+});
+$('#c-file').addEventListener('change', (ev) => { addFiles(ev.target.files); ev.target.value = ''; body.focus(); });
+// Paste a screenshot anywhere in the column: it goes to the open card if one is
+// expanded (and you're not typing in the composer), otherwise to a new comment.
+document.addEventListener('paste', async (ev) => {
+  const files = clipboardFiles(ev.clipboardData);
+  if (!files.length) return;
+  ev.preventDefault();
+  const expanded = [...state.expanded];
+  if (expanded.length === 1 && !composer.contains(document.activeElement)) {
+    const ready = (await Promise.all(files.map(prepareFile))).filter(Boolean);
+    await uploadFiles(expanded[0], ready);
+    toast(`Attached ${ready.length} to #${expanded[0]}`);
+    await loadDetail(expanded[0]);
+    return load();
+  }
+  if (await addFiles(files)) toast('Screenshot added — write a note and Hang');
+});
+composer.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) { ev.preventDefault(); composer.classList.add('dragging'); } });
+composer.addEventListener('dragleave', () => composer.classList.remove('dragging'));
+composer.addEventListener('drop', (ev) => { ev.preventDefault(); composer.classList.remove('dragging'); addFiles(ev.dataTransfer.files); body.focus(); });
+
+composer.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const text = body.value.trim() || (pendingFiles.length ? 'Screenshot' : '');
+  if (!text) return body.focus();
+  const project = $('#c-project').value;
+  store.set('lastProject', project);
+  try {
+    const c = await api('POST', '/api/comments', { body: text, project: project || undefined, source: $('#c-source').value, location: $('#c-location').value });
+    if (pendingFiles.length) await uploadFiles(c.id, pendingFiles);
+    pendingFiles.forEach((f) => f.url && URL.revokeObjectURL(f.url));
+    pendingFiles = []; renderFiles();
+    body.value = ''; $('#c-location').value = ''; grow();
+    state.status = 'open'; store.set('status', 'open');
+    toast(`Hung #${c.id}`);
+    await load();
+    $('#line').scrollTop = 0;
+  } catch (e) { toast(e.message); }
+});
+
+// ---------- project dialog ----------
+const dlg = $('#project-dialog');
+let editing = null;
+function openProjectDialog(p = null) {
+  editing = p;
+  const f = $('#project-form');
+  $('#pd-title').textContent = p ? 'Edit project' : 'New project';
+  f.name.value = p?.name || '';
+  f.path.value = p?.path || '';
+  f.color.value = p?.color || ['#7c5cff', '#ff7a59', '#2bb3a3', '#3b82f6', '#e5487a', '#f2a93b'][state.projects.length % 6];
+  $('#pd-delete').hidden = !p;
+  dlg.showModal();
+}
+dlg.addEventListener('close', async () => {
+  if (dlg.returnValue !== 'ok') return;
+  const f = $('#project-form');
+  const data = { name: f.name.value, path: f.path.value, color: f.color.value };
+  try {
+    const p = editing ? await api('PATCH', `/api/projects/${editing.id}`, data) : await api('POST', '/api/projects', data);
+    if (!editing) { state.project = p.id; store.set('project', p.id); }
+    load();
+  } catch (e) { toast(e.message); }
+});
+$('#pd-delete').addEventListener('click', async () => {
+  if (!editing || !confirm(`Delete project “${editing.name}”? Its comments stay, without a project.`)) return;
+  await api('DELETE', `/api/projects/${editing.id}`).catch((e) => toast(e.message));
+  dlg.close();
+  if (state.project === editing.id) { state.project = ''; store.set('project', ''); }
+  load();
+});
+
+// ---------- keyboard ----------
+document.addEventListener('keydown', (ev) => {
+  if (ev.target.matches('input, textarea, select') || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key === 'n' || ev.key === 'c') { ev.preventDefault(); body.focus(); }
+  const tab = { 1: 'open', 2: 'fixed', 3: 'done' }[ev.key];
+  if (tab) $(`#states [data-status="${tab}"]`).click();
+});
+
+// ---------- live ----------
+let reloadTimer;
+let es;
+function connect() {
+  es?.close();
+  es = new EventSource(withToken('/api/events'));
+  es.addEventListener('open', () => $('#live').classList.add('on'));
+  es.addEventListener('error', () => $('#live').classList.remove('on'));
+  es.addEventListener('change', () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(load, 120); });
+}
+
+setInterval(() => !state.asking && render(), 60000); // refresh "5m" labels
+load().catch((e) => toast(e.message));
+connect();

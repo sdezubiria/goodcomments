@@ -1,0 +1,5 @@
+mac
+.build
+*.db*
+node_modules
+.claude

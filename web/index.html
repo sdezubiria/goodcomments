@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GoodComments</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='9' y='3' width='14' height='26' rx='4' fill='%237c5cff'/><rect x='14' y='0' width='4' height='8' rx='1.5' fill='%23c9ced8'/></svg>">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true">
+    <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+  </div>
+
+  <aside class="column" id="column">
+    <header class="top">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <h1>GoodComments</h1>
+        <span class="live" id="live" title="Live"></span>
+      </div>
+
+      <nav class="states" id="states" role="tablist">
+        <button data-status="open" role="tab"><span class="dot open"></span>Open<b></b></button>
+        <button data-status="fixed" role="tab"><span class="dot fixed"></span>To check<b></b></button>
+        <button data-status="done" role="tab"><span class="dot done"></span>Done<b></b></button>
+      </nav>
+
+      <div class="projects" id="projects"></div>
+
+      <form class="composer" id="composer" autocomplete="off">
+        <textarea id="c-body" rows="1" placeholder="Hang a new comment… (paste or drop screenshots)"></textarea>
+        <div class="files" id="c-files"></div>
+        <div class="composer-row">
+          <select id="c-project" aria-label="Project"></select>
+          <input id="c-source" list="sources" placeholder="From…" aria-label="Source">
+          <input id="c-location" placeholder="Where (url, page…)" aria-label="Where">
+          <label class="attach" title="Attach screenshots"><input type="file" id="c-file" accept="image/*,application/pdf" multiple hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10.5 4.5L5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2"/></svg></label>
+          <button type="submit" class="primary" title="Hang it (⌘↵)">Hang</button>
+        </div>
+        <datalist id="sources">
+          <option>Email</option><option>WhatsApp</option><option>Slack</option><option>Meeting</option>
+          <option>Call</option><option>Figma</option><option>Client</option><option>Me</option><option>Agent</option>
+        </datalist>
+      </form>
+    </header>
+
+    <div class="line" id="line">
+      <div class="rope" aria-hidden="true"></div>
+      <ol class="items" id="items"></ol>
+      <div class="empty" id="empty" hidden></div>
+    </div>
+  </aside>
+
+  <dialog id="project-dialog">
+    <form method="dialog" id="project-form">
+      <h2 id="pd-title">New project</h2>
+      <label>Name <input name="name" required></label>
+      <label>Repo folder <input name="path" placeholder="/Users/you/Code/repo (optional)"></label>
+      <label class="color">Color <input name="color" type="color" value="#7c5cff"></label>
+      <p class="hint">Agents working inside the repo folder pick the project automatically.</p>
+      <div class="dialog-actions">
+        <button type="button" class="ghost danger" id="pd-delete" hidden>Delete</button>
+        <span></span>
+        <button value="cancel" class="ghost" formnovalidate>Cancel</button>
+        <button value="ok" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "goodcomments",
+  "version": "0.1.0",
+  "description": "Track feedback and comments across projects: open → fixed → done. Built for humans and agents.",
+  "type": "module",
+  "bin": {
+    "gc": "bin/gc.js"
+  },
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "mcp": "node --no-warnings bin/gc.js mcp",
+    "mac": "sh mac/build.sh"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "MIT"
+}
