@@ -46,6 +46,7 @@ Every state lives on one column: comments hang from monkeys on a trunk (open), d
 ## Cleaning the pile
 Click **🧹 Clean up** on the pile (or `gc clean`) to archive the done comments: they leave the board but stay in the database. ⌘Z (or `gc restore <ids>`) brings them back; `gc list -s done --archived` shows them.
 To do it automatically, open **Settings** (the gear in the column's header) and pick how long approved comments stay on the pile: 1 day, 3 days, a week, two weeks or a month. The server checks every hour (`PATCH /api/settings {"auto_clean_days": 7}`; 0 turns it off).
+Settings also has **Appearance**: same as macOS, light or dark (it applies to the panel, the ⌃⌥N window and any open browser tab).
 
 ## Projects
 ```bash

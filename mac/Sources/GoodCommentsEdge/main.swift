@@ -322,6 +322,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         web.evaluateJavaScript("window.gcPanel && gcPanel({ pinned: \(pinned) })")
     }
 
+    /// Light / dark / system, from the board's Settings: the glass follows, and so does the other web view.
+    func applyTheme(_ theme: String, from sender: WKWebView?) {
+        let appearance: NSAppearance? = theme == "dark" ? NSAppearance(named: .darkAqua) : theme == "light" ? NSAppearance(named: .aqua) : nil
+        if NSApp.appearance != appearance { NSApp.appearance = appearance }
+        for other in [web, quickWeb].compactMap({ $0 }) where other !== sender {
+            other.evaluateJavaScript("window.gcTheme && gcTheme('\(theme)')", completionHandler: nil)
+        }
+    }
+
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
         switch action {
@@ -332,6 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         case "editorClose": exitEditor()
         case "moved": if let id = body["id"] as? Int { ownMoves[id] = Date() }
         case "quickDone", "quickCancel": hideQuick()
+        case "theme": applyTheme((body["theme"] as? String) ?? "system", from: message.webView)
         default: break
         }
     }

@@ -37,6 +37,18 @@
     color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+    --bg: #0f1013; --grid: rgba(255, 255, 255, .035);
+    --ink: #eef0f4; --ink-2: #aab0bc; --ink-3: #737a87;
+    --glass: rgba(28, 30, 36, .6); --glass-strong: rgba(34, 36, 43, .9);
+    --sheet: rgba(40, 43, 51, .78); --sheet-edge: rgba(255, 255, 255, .08);
+    --hair: rgba(255, 255, 255, .08); --hair-2: rgba(255, 255, 255, .14);
+    --shadow: 0 1px 1px rgba(0, 0, 0, .3), 0 10px 26px -10px rgba(0, 0, 0, .6);
+    --shadow-up: 0 2px 2px rgba(0, 0, 0, .3), 0 24px 44px -14px rgba(0, 0, 0, .75);
+    --rope: #555b66; --pin: linear-gradient(90deg, #6d727c, #4f545d 55%, #3e424a);
+    --accent: #f2f3f6; --accent-ink: #111318; --field: rgba(255, 255, 255, .06);
+    color-scheme: dark;
+  }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
@@ -57,8 +69,9 @@ button { cursor: pointer; }
 .b2 { width: 40vw; height: 40vw; right: 6vw; top: -14vh; background: #d9b8ff; }
 .b3 { width: 38vw; height: 38vw; right: -10vw; bottom: -12vh; background: #ffc89a; }
 @media (prefers-color-scheme: dark) {
-  .blob { opacity: .18; }
+  :root:not([data-theme="light"]) .blob { opacity: .18; }
 }
+:root[data-theme="dark"] .blob { opacity: .18; }
 /* ---------- the column ---------- */
 .column {
   position: fixed; top: 10px; right: 10px; bottom: 10px;
@@ -279,6 +292,7 @@ dialog input[type=color] { width: 42px; height: 26px; padding: 2px; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --bark-a: #5a4c38; --bark-b: #4a3d2c; --hook: #9aa2b0; }
 }
+:root[data-theme="dark"] { --bark-a: #5a4c38; --bark-b: #4a3d2c; --hook: #9aa2b0; }
 [data-skin="trunk"] .rope {
   left: 13px; width: 20px; border-radius: 10px;
   background: repeating-linear-gradient(180deg, var(--bark-a) 0 26px, var(--bark-b) 26px 29px);
@@ -357,6 +371,7 @@ input.invalid::placeholder { color: #d13a40; opacity: .85; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --face: #e3c79c; }
 }
+:root[data-theme="dark"] { --face: #e3c79c; }
 .monkey { display: none; }
 [data-skin="trunk"] .item { padding-top: 30px; }
 [data-skin="trunk"] .peg i { display: none; }
@@ -454,6 +469,7 @@ input.invalid::placeholder { color: #d13a40; opacity: .85; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --sheet-solid: #2c2f37; }
 }
+:root[data-theme="dark"] { --sheet-solid: #2c2f37; }
 /* =====================================================================
    Easter eggs (trunk): poke the monkeys
    ===================================================================== */

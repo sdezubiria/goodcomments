@@ -1126,20 +1126,39 @@ $('#pd-delete').addEventListener('click', async () => {
 
 // ---------- settings ----------
 const settingsDlg = $('#settings-dialog');
+/** Light / dark / follow the system. Remembered locally too, so the page doesn't flash the wrong colours while it loads. */
+function setTheme(theme) {
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+  store.set('theme', theme || 'system');
+}
+function applyTheme(theme) {
+  setTheme(theme);
+  // the Mac app matches its glass (and the other window) to it
+  window.webkit?.messageHandlers?.gc?.postMessage({ action: 'theme', theme: theme || 'system' });
+}
+window.gcTheme = setTheme;
+applyTheme(store.get('theme', 'system'));
+api('GET', '/api/settings').then((s) => applyTheme(s.theme)).catch(() => {});
 $('#settings-btn').addEventListener('click', async () => {
   try {
     const s = await api('GET', '/api/settings');
     const sel = $('#settings-form').auto_clean_days;
     if (![...sel.options].some((o) => Number(o.value) === s.auto_clean_days)) sel.add(new Option(`${s.auto_clean_days} days after approving`, s.auto_clean_days));
     sel.value = String(s.auto_clean_days);
+    $('#settings-form').theme.value = s.theme;
     settingsDlg.showModal();
   } catch (e) { toast(e.message); }
 });
-settingsDlg.addEventListener('close', async () => {
-  if (settingsDlg.returnValue !== 'ok') return;
+$('#settings-form').addEventListener('submit', async (ev) => {
+  if (ev.submitter?.value !== 'ok') return;
   const days = Number($('#settings-form').auto_clean_days.value);
+  const theme = $('#settings-form').theme.value;
   try {
-    await api('PATCH', '/api/settings', { auto_clean_days: days });
+    const before = await api('GET', '/api/settings');
+    const s = await api('PATCH', '/api/settings', { auto_clean_days: days, theme });
+    applyTheme(s.theme);
+    if (before.auto_clean_days === days) return;
     toast(days ? `Done comments now leave the pile ${days === 1 ? '1 day' : `${days} days`} after approving` : 'Automatic clean-up is off');
   } catch (e) { toast(e.message); }
 });
@@ -1228,6 +1247,7 @@ function connect() {
   es.addEventListener('change', (ev) => {
     let data = {};
     try { data = JSON.parse(ev.data); } catch {}
+    if (data.settings) api('GET', '/api/settings').then((x) => applyTheme(x.theme)).catch(() => {});
     const c = data.id && state.comments.find((x) => x.id === data.id);
     const li = c && $(`#items .item[data-id="${data.id}"]`);
     // an agent pulled a stick: show the card falling instead of just jumping

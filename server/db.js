@@ -296,7 +296,10 @@ export async function restorePile({ ids, actor }) {
 // ---------- settings ----------
 
 // auto_clean_days: archive done comments this many days after they were approved (0 = never)
-const SETTINGS = { auto_clean_days: { fallback: 0, parse: (v) => { const n = Number(v); if (!Number.isInteger(n) || n < 0 || n > 365) throw new HttpError(400, 'auto_clean_days must be a whole number of days from 0 (never) to 365'); return n; } } };
+const SETTINGS = { auto_clean_days: { fallback: 0, parse: (v) => { const n = Number(v); if (!Number.isInteger(n) || n < 0 || n > 365) throw new HttpError(400, 'auto_clean_days must be a whole number of days from 0 (never) to 365'); return n; } },
+  // theme: the board's look, everywhere it's open (Mac panel, quick window, browser)
+  theme: { fallback: 'system', parse: (v) => { if (!['system', 'light', 'dark'].includes(v)) throw new HttpError(400, 'theme must be system, light or dark'); return v; } },
+};
 
 export async function getSettings() {
   const rows = await db.all('select key, value from settings');
