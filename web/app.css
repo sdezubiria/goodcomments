@@ -641,7 +641,7 @@ a.act { text-decoration: none; }
 /* ---------- quick capture (?quick=1): only the composer, for the ⌃⌥N window ---------- */
 .quick body { background: transparent; }
 .quick .backdrop, .quick .brand, .quick .states, .quick .projects, .quick .search, .quick .line, .quick #c-shot, .quick .composer-row .attach { display: none; }
-.quick .column { inset: 0; width: 100%; border-radius: 0; border: 0; box-shadow: none; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; animation: none; }
+.quick .column { inset: 0; width: 100%; border-radius: 0; border: 0; box-shadow: none; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: none; -webkit-backdrop-filter: none; animation: none; }
 .quick .top { border: 0; padding: 14px; }
 .quick .composer-row { display: grid; grid-template-columns: 1fr .8fr 1fr auto; }
 .quick .composer textarea { min-height: 64px; font-size: 14px; }
