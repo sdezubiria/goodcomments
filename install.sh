@@ -59,7 +59,10 @@ elif command -v swiftc >/dev/null 2>&1 || [ -d /Applications/Xcode.app ]; then
   # tell the app where its server lives
   defaults write local.goodcomments.edge root "$APP_DIR"
   pkill -f "GoodComments.app/Contents/MacOS/GoodComments" 2>/dev/null || true
-  open "$HOME/Applications/GoodComments.app"
+  open "$HOME/Applications/GoodComments.app" || true
+  sleep 2
+  pgrep -f "GoodComments.app/Contents/MacOS/GoodComments" >/dev/null 2>&1 \
+    || warn "The menu bar app didn't start. If macOS blocked it, open System Settings > Privacy & Security and click Open Anyway, then: open ~/Applications/GoodComments.app"
 else
   warn "Skipped the menu bar app: it needs Swift (xcode-select --install). The board still works in the browser: gc open"
 fi

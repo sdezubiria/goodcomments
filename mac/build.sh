@@ -52,4 +52,11 @@ if [ -n "$IDENTITY" ]; then
 else
   codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 fi
+# A revoked certificate still shows as "valid" in the keychain, but macOS treats code signed
+# with it as malware: launch fails (POSIX 163) and XProtect deletes the app. Fall back to ad-hoc.
+if [ "$IDENTITY" != "-" ] && spctl -a -vv -t exec "$APP" 2>&1 | grep -q REVOKED; then
+  echo "warning: the certificate \"$IDENTITY\" is revoked; using an ad-hoc signature instead" >&2
+  codesign --force --sign - "$APP" >/dev/null 2>&1
+fi
+codesign --verify --strict "$APP" || { echo "error: $APP is not signed correctly" >&2; exit 1; }
 echo "Built $(pwd)/$APP"
