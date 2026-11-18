@@ -37,7 +37,9 @@ The Mac app lives in the menu bar (speech-bubble icon). Rest the pointer on the 
 ## The board
 Every state lives on one column: comments hang from monkeys on a trunk (open), drop to "To check" when fixed, and fall onto the pile at the bottom when you approve them. Drag and throw the monkeys on the pile; poke the ones on the trunk.
 
-**Keyboard** (when you're not typing in a field): `j` / `k` move a focus ring between cards, `↵` opens or closes the card, `a` approves it (in To check), `f` marks it fixed, `r` reopens it, `/` searches (filters the cards by text), `esc` clears the focus and the search. Also: `n` new comment, `1` `2` `3` jump to Open / To check / Done, ⌘Z / ⌘⇧Z undo and redo moves. In the Mac panel, ⌃⌥C opens it with the cursor in the composer: press esc (or click the column) first.
+**Search** hides behind the magnifier in the column's header (next to Settings), so it never gets mixed up with the comment box. Click it or press `/`; it stays open while it holds text and tucks away when you clear it (esc) or leave it empty.
+
+**Keyboard** (when you're not typing in a field): `j` / `k` move a focus ring between cards, `↵` opens or closes the card, `a` approves it (in To check), `f` marks it fixed, `r` reopens it, `/` searches (filters the cards by text), `esc` clears the focus and closes the search. Also: `n` new comment, `1` `2` `3` jump to Open / To check / Done, ⌘Z / ⌘⇧Z undo and redo moves. In the Mac panel, ⌃⌥C opens it with the cursor in the composer: press esc (or click the column) first.
 
 **Open where it is:** a card whose *Where* is a URL gets an **Open** button. If it's a file in the project's folder (`src/header.php:42`, `./notes.md`), **Open** shows it in your editor: set `GOODCOMMENTS_EDITOR` (e.g. `code`, `cursor`, `zed`, `subl` — these jump to the line) before starting the server, or it uses macOS `open`. Only files inside the project's folder open.
 
@@ -75,7 +77,7 @@ Start the text with `#project` or `[Project]` to file it; an unknown tag still s
 Email, Slack and your phone can only reach the inbox once the server is hosted (below).
 
 ### iPhone: a Share Sheet Shortcut
-Your phone can't reach `127.0.0.1` on your Mac, so this needs [cloud mode](#cloud-mode) with `GOODCOMMENTS_INBOX_KEY` set (the server also needs `GOODCOMMENTS_TOKEN`, as always when it's public; the inbox uses its own key instead). In the Shortcuts app:
+Your phone can't reach `127.0.0.1` on your Mac, so this needs [cloud mode](#cloud-mode): a server listening publicly (`GOODCOMMENTS_HOST=0.0.0.0`, already set in the `Dockerfile`) with `GOODCOMMENTS_TOKEN` (required whenever it's public) and `GOODCOMMENTS_INBOX_KEY`. The inbox only checks the key in the URL, so the Shortcut never needs the token. Check it's on: `curl https://your-server/api/health` shows `"inbox": true`. In the Shortcuts app:
 1. New shortcut → ⓘ → turn on **Show in Share Sheet**; accept **Text, Images, URLs**.
 2. **If** *Shortcut Input* has any value *Image*:
    - **Base64 Encode** *Shortcut Input* (line breaks: None)
@@ -110,7 +112,7 @@ Agents can list, add, note and mark comments **fixed**; only you mark them **don
 ## Cloud mode
 CLI, MCP and the web column only talk to the HTTP API; storage is swappable in `server/sql.js`.
 1. **Database:** create a [Turso](https://turso.tech) database and set `GOODCOMMENTS_LIBSQL_URL=libsql://…turso.io` and `GOODCOMMENTS_LIBSQL_TOKEN=…`. (Or keep SQLite on a mounted volume at `/data`.)
-2. **Server:** deploy the `Dockerfile` (Fly.io, Railway, Render…) with `GOODCOMMENTS_TOKEN=<secret>` (required — the server refuses to listen publicly without it) and optionally `GOODCOMMENTS_INBOX_KEY`. It reads `PORT` if the host sets one.
+2. **Server:** deploy the `Dockerfile` (Fly.io, Railway, Render…) with `GOODCOMMENTS_TOKEN=<secret>` (required — the server refuses to listen publicly without it) and optionally `GOODCOMMENTS_INBOX_KEY`. The image sets `GOODCOMMENTS_HOST=0.0.0.0` (the default, `127.0.0.1`, only listens on the machine itself). It reads `PORT` if the host sets one (else `GOODCOMMENTS_PORT`, default 4477).
 3. **Clients:** `export GOODCOMMENTS_URL=https://… GOODCOMMENTS_TOKEN=…` for `gc` and the MCP server. The web column asks for the token once and remembers it.
 
 The Mac edge panel still opens the local server; point it elsewhere by editing `base` in `mac/Sources/GoodCommentsEdge/main.swift`.

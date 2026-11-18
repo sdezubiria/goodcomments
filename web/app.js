@@ -1175,15 +1175,29 @@ function applyFocus(scroll) {
 }
 function setFocus(id) { state.focusId = id; applyFocus(true); }
 
+// Search hides behind the magnifier next to Settings, so it isn't mistaken for the comment box.
+// It stays out while it holds a query; empty, it tucks away again when you leave it.
 const q = $('#q');
-function openSearch() { q.focus(); q.select(); }
+const searchBox = $('#search');
+const searchBtn = $('#search-btn');
+function showSearch(on) {
+  searchBox.hidden = !on;
+  searchBtn.setAttribute('aria-expanded', String(on));
+  searchBtn.classList.toggle('on', on);
+}
+function openSearch() { showSearch(true); q.focus(); q.select(); }
 function clearSearch() {
   q.value = '';
+  if (document.activeElement !== q) showSearch(false);
   if (state.q) { state.q = ''; render(); }
 }
+function closeSearch() { q.blur(); clearSearch(); showSearch(false); }
+searchBtn.addEventListener('mousedown', (ev) => ev.preventDefault());   // keep focus where it is, so blur doesn't race the click
+searchBtn.addEventListener('click', () => (searchBox.hidden ? openSearch() : closeSearch()));
+q.addEventListener('blur', () => { if (!q.value.trim()) showSearch(false); });
 q.addEventListener('input', () => { state.q = q.value.trim().toLowerCase(); render(); });
 q.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape') { ev.preventDefault(); clearSearch(); q.blur(); }
+  if (ev.key === 'Escape') { ev.preventDefault(); closeSearch(); }
   if (ev.key === 'Enter' || ev.key === 'ArrowDown') {   // jump into the results
     ev.preventDefault();
     q.blur();

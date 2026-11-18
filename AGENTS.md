@@ -42,14 +42,18 @@ If you were started by the board's **Ask Claude** button, your task names the co
 
 ## HTTP API (base `http://127.0.0.1:4477`)
 - `GET  /api/projects` · `GET /api/projects/resolve?path=<dir>`
-- `GET  /api/comments?project=<id>&status=open|fixed|done|all&q=<text>`
+- `GET  /api/comments?project=<id>&status=open|fixed|done|all&q=<text>` (`&archived=only` for comments cleaned off the pile, `&archived=all` for both)
 - `GET  /api/comments/:id` (includes history)
 - `POST /api/comments` `{ body, project?, source?, location? }`
 - `POST /api/comments/:id/status` `{ status: "fixed", note }`
 - `POST /api/comments/:id/notes` `{ note }`
 - `POST /api/comments/:id/attachments` raw file body, `content-type: image/png` (or jpeg/gif/webp/heic/pdf), `x-filename` header
 - `GET  /api/attachments/:id`
+- `GET  /api/health` (`inbox: true` when the inbox is on, `local: true` on a local server)
+- `POST /api/inbox?key=<inbox key>[&project=<id>&source=<name>]` — text or JSON `{ text, project?, location?, attachments?: [{ name, type, base64 }] }`; for webhooks and phone Shortcuts, not for agents (use `POST /api/comments`)
 - Local server only, for the board's buttons (need an `x-goodcomments: 1` header; agents don't need these):
   `POST /api/comments/:id/open` (open its file in the owner's editor) · `POST /api/comments/:id/agent` (run Claude Code on it) · `GET /api/agent-runs` · `GET /api/comments/:id/agent/log`
 
-Send `content-type: application/json` and an `x-actor` header with your name.
+Send `content-type: application/json` and an `x-actor` header with your name. On a hosted server (`GOODCOMMENTS_URL=https://…`) also send `authorization: Bearer $GOODCOMMENTS_TOKEN`; `gc` and the MCP server do this for you.
+
+The owner's tools — approving (`gc done`), reopening, cleaning the pile (`gc clean`, `POST /api/pile/clean`), restoring and `PATCH /api/settings` — aren't for agents.

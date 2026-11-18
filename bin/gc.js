@@ -29,11 +29,14 @@ const HELP = `gc — track feedback: open → fixed → done
   gc version
   gc mcp         run as an MCP server (stdio) for agents
 
-Board keys: j/k move · a approve · f fixed · r reopen · ↵ open card · / search · esc clear · n new
+Board keys: j/k move · a approve · f fixed · r reopen · ↵ open card · / search (or the magnifier) · esc clear · n new
 Mac app: ⌃⌥C column · ⌃⌥N quick comment · ⌃⌥S screenshot · Services → Send to GoodComments
 
 Env: GOODCOMMENTS_URL (default ${BASE}), GOODCOMMENTS_ACTOR (name shown on changes), GOODCOMMENTS_TOKEN
-Server env: GOODCOMMENTS_EDITOR (code, cursor, zed… for the Open button), GOODCOMMENTS_AGENT_TOOLS / GOODCOMMENTS_CLAUDE (Ask Claude)`;
+Server env: GOODCOMMENTS_EDITOR (code, cursor, zed… for the Open button), GOODCOMMENTS_AGENT_TOOLS / GOODCOMMENTS_CLAUDE (Ask Claude)
+  GOODCOMMENTS_HOST (0.0.0.0 to listen publicly; needs GOODCOMMENTS_TOKEN), GOODCOMMENTS_PORT (4477)
+  GOODCOMMENTS_INBOX_KEY (turns on POST /api/inbox?key=… for email, Slack, iPhone Shortcuts: see README)
+  GOODCOMMENTS_DB (SQLite file) or GOODCOMMENTS_LIBSQL_URL + GOODCOMMENTS_LIBSQL_TOKEN (Turso)`;
 
 const FLAGS = { p: 'project', s: 'status', q: 'query', l: 'location', b: 'body', f: 'file' };
 

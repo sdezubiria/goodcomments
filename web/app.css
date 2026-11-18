@@ -619,8 +619,9 @@ div.reopened {
 .draw-hint { padding: 0 12px 12px; text-align: center; color: rgba(255,255,255,.7); font-size: 12px; }
 .files .file, .ask-files .file { cursor: pointer; }
 /* ---------- search ---------- */
-.search { display: flex; align-items: center; gap: 8px; }
-.search { position: relative; }
+.search { display: flex; align-items: center; gap: 8px; position: relative; }
+.search[hidden] { display: none; }
+.brand-btn.on { color: var(--ink); background: var(--field); }
 .search input {
   flex: 1; min-width: 0; border: 1px solid var(--hair); background: var(--field); border-radius: 9px; padding: 6px 10px 6px 28px; outline: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238d93a0' stroke-width='1.7' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.3'/%3E%3Cpath d='M10.2 10.2l3.3 3.3'/%3E%3C/svg%3E");
