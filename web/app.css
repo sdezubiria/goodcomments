@@ -90,7 +90,6 @@ button { cursor: pointer; }
 .brand-btn:hover { color: var(--ink); background: var(--field); }
 .brand-btn svg { width: 14px; height: 14px; }
 dialog select { font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 9px; border: 1px solid var(--hair); background: var(--field); color: var(--ink); }
-dialog .hint code { font-size: 11px; }
 .live.on { background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 20%, transparent); }
 /* status segmented control */
 .states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; background: var(--field); border: 1px solid var(--hair); border-radius: 11px; }
