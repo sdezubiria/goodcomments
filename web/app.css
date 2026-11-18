@@ -612,7 +612,6 @@ div.reopened {
   background-repeat: no-repeat; background-position: 9px 50%; background-size: 13px;
 }
 .search input:focus { border-color: color-mix(in srgb, var(--fixed) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fixed) 16%, transparent); }
-.search .keys { flex: none; font-size: 10.5px; letter-spacing: .08em; color: var(--ink-3); white-space: nowrap; }
 /* ---------- keyboard focus ring (j / k) ---------- */
 .item.kfocus .sheet { outline: 2px solid var(--fixed); outline-offset: 2px; }
 /* ---------- open where it is · ask an agent ---------- */
