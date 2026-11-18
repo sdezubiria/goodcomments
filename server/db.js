@@ -53,7 +53,11 @@ await db.exec(`
     data        blob not null,
     created_at  text not null
   );
-  create index if not exists attachments_comment on attachments(comment_id)
+  create index if not exists attachments_comment on attachments(comment_id);
+  create table if not exists settings (
+    key         text primary key,
+    value       text
+  )
 `);
 
 // migrations for databases created by older versions
@@ -256,10 +260,12 @@ export async function deleteComment(id) {
 
 // ---------- cleaning the pile ----------
 
-/** Archive done comments (all, one project's, or the given ids). Returns the ids that were archived. */
-export async function cleanPile({ project, ids, actor } = {}) {
+/** Archive done comments (all, one project's, or the given ids; olderThan: only those done before that time). Returns the ids that were archived. */
+export async function cleanPile({ project, ids, olderThan, actor } = {}) {
   let rows;
-  if (Array.isArray(ids) && ids.length) {
+  if (olderThan) {
+    rows = await db.all(`select id from comments where status = 'done' and archived_at is null and done_at < ?`, [olderThan]);
+  } else if (Array.isArray(ids) && ids.length) {
     const list = ids.map(Number).filter(Boolean);
     rows = await db.all(`select id from comments where status = 'done' and archived_at is null and id in (${list.map(() => '?').join(',')})`, list);
   } else if (project) {
@@ -285,6 +291,25 @@ export async function restorePile({ ids, actor }) {
     await logEvent(id, 'unarchived', actor, null);
   }
   return rows.map((r) => r.id);
+}
+
+// ---------- settings ----------
+
+// auto_clean_days: archive done comments this many days after they were approved (0 = never)
+const SETTINGS = { auto_clean_days: { fallback: 0, parse: (v) => { const n = Number(v); if (!Number.isInteger(n) || n < 0 || n > 365) throw new HttpError(400, 'auto_clean_days must be a whole number of days from 0 (never) to 365'); return n; } } };
+
+export async function getSettings() {
+  const rows = await db.all('select key, value from settings');
+  const saved = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return Object.fromEntries(Object.entries(SETTINGS).map(([k, d]) => [k, k in saved ? d.parse(saved[k]) : d.fallback]));
+}
+
+export async function updateSettings(fields = {}) {
+  for (const [k, v] of Object.entries(fields)) {
+    if (!SETTINGS[k]) throw new HttpError(400, `unknown setting "${k}"`);
+    await db.run('insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value', [k, String(SETTINGS[k].parse(v))]);
+  }
+  return getSettings();
 }
 
 // ---------- attachments (screenshots, images, PDFs) ----------

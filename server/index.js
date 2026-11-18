@@ -191,6 +191,15 @@ route('POST', '/api/pile/clean', async (req) => {
   broadcast('change', { pile: 'cleaned' });
   return { archived: ids };
 });
+
+// Settings (for now: auto clean-up of the pile).
+route('GET', '/api/settings', async () => store.getSettings());
+route('PATCH', '/api/settings', async (req) => {
+  const settings = await store.updateSettings(await readJson(req));
+  broadcast('change', { settings: true });
+  autoClean();
+  return settings;
+});
 route('POST', '/api/pile/restore', async (req) => {
   const body = await readJson(req);
   const ids = await store.restorePile({ ...body, actor: actorOf(req, body) });
@@ -316,6 +325,18 @@ server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') { console.error(`GoodComments: port ${PORT} is already in use (probably already running).`); process.exit(1); }
   throw err;
 });
+// Auto clean-up: archive done comments once they've sat on the pile longer than the chosen window (checked hourly).
+async function autoClean() {
+  try {
+    const { auto_clean_days: days } = await store.getSettings();
+    if (!days) return;
+    const ids = await store.cleanPile({ olderThan: new Date(Date.now() - days * 86400000).toISOString(), actor: 'auto clean-up' });
+    if (ids.length) broadcast('change', { pile: 'cleaned' });
+  } catch (err) { console.error('auto clean-up failed:', err.message); }
+}
+setInterval(autoClean, 60 * 60 * 1000).unref();
+
 server.listen(PORT, HOST, () => {
+  autoClean();
   console.log(`GoodComments running at http://${HOST}:${PORT}  (${store.DB_KIND}: ${store.DB_PATH})${TOKEN ? '  [token required]' : ''}${INBOX_KEY ? '  [inbox on]' : ''}`);
 });

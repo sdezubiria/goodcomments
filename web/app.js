@@ -1124,6 +1124,26 @@ $('#pd-delete').addEventListener('click', async () => {
   load();
 });
 
+// ---------- settings ----------
+const settingsDlg = $('#settings-dialog');
+$('#settings-btn').addEventListener('click', async () => {
+  try {
+    const s = await api('GET', '/api/settings');
+    const sel = $('#settings-form').auto_clean_days;
+    if (![...sel.options].some((o) => Number(o.value) === s.auto_clean_days)) sel.add(new Option(`${s.auto_clean_days} days after approving`, s.auto_clean_days));
+    sel.value = String(s.auto_clean_days);
+    settingsDlg.showModal();
+  } catch (e) { toast(e.message); }
+});
+settingsDlg.addEventListener('close', async () => {
+  if (settingsDlg.returnValue !== 'ok') return;
+  const days = Number($('#settings-form').auto_clean_days.value);
+  try {
+    await api('PATCH', '/api/settings', { auto_clean_days: days });
+    toast(days ? `Done comments now leave the pile ${days === 1 ? '1 day' : `${days} days`} after approving` : 'Automatic clean-up is off');
+  } catch (e) { toast(e.message); }
+});
+
 // ---------- keyboard ----------
 // n / c new comment · 1 2 3 zones · j / k move between cards · a approve · f mark fixed · r reopen
 // ↵ expand · / search · esc clear. Never while typing in a field.
@@ -1154,7 +1174,7 @@ q.addEventListener('keydown', (ev) => {
 });
 
 document.addEventListener('keydown', (ev) => {
-  if (isEditable(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey || drawing() || dlg.open) return;
+  if (isEditable(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey || drawing() || dlg.open || settingsDlg.open) return;
   if (ev.key === 'n' || ev.key === 'c') { ev.preventDefault(); body.focus(); return; }
   const tab = { 1: 'open', 2: 'fixed', 3: 'done' }[ev.key];
   if (tab) return $(`#states [data-status="${tab}"]`).click();

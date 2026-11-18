@@ -86,6 +86,11 @@ button { cursor: pointer; }
 .brand h1 { font-size: 13px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
 .logo { width: 22px; height: 22px; display: block; flex: none; }
 .live { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); transition: background .3s; }
+.brand-btn { display: grid; place-items: center; width: 24px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-3); }
+.brand-btn:hover { color: var(--ink); background: var(--field); }
+.brand-btn svg { width: 14px; height: 14px; }
+dialog select { font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 9px; border: 1px solid var(--hair); background: var(--field); color: var(--ink); }
+dialog .hint code { font-size: 11px; }
 .live.on { background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 20%, transparent); }
 /* status segmented control */
 .states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; background: var(--field); border: 1px solid var(--hair); border-radius: 11px; }
