@@ -162,6 +162,7 @@ const isUrl = (s) => /^https?:\/\//i.test(s || '');
 // "src/header.php:12", "./notes.md", "~/site/style.css": a file in the project's folder (not "/contact", a page)
 const looksLikeFile = (s) => /^\S+$/.test(s || '') && (/\.\w{1,8}(:\d+){0,2}$/.test(s) || /^(\.{1,2}|~)\//.test(s));
 const icons = {
+  pencil: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.8 2.7l2.5 2.5L5.6 12.9l-3.1.6.6-3.1z"/></svg>',
   check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg>',
   wrench: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 2.5a3 3 0 0 0-3.4 4L2.5 11.1a1.3 1.3 0 0 0 1.9 1.9L9 8.4a3 3 0 0 0 4-3.4l-1.8 1.8-1.7-.3-.3-1.7z"/></svg>',
   undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5L2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H7"/></svg>',
@@ -196,6 +197,8 @@ function render() {
   if (state.moving) { state.pending = true; return; }
   // keep the line still while you're typing in it
   if ($('#line').contains(document.activeElement) && document.activeElement.matches('input')) { state.pending = true; return; }
+  // …and while you have text selected, so a live update doesn't drop the selection before you copy it
+  if (selecting()) { state.pending = true; return; }
   state.pending = false;
 
   const counts = { open: 0, fixed: 0, done: 0 };
@@ -217,6 +220,14 @@ function render() {
 
   if (state.asking) $(`#ask-${state.asking.id} input`)?.focus();
 }
+
+/** Text is selected somewhere on the board (re-rendering would move the nodes and lose it). */
+function selecting() {
+  const sel = window.getSelection();
+  return !!sel && !sel.isCollapsed && sel.rangeCount > 0 && $('#line').contains(sel.getRangeAt(0).commonAncestorContainer);
+}
+// once the selection is gone, catch up on what was held back
+document.addEventListener('selectionchange', () => { if (state.pending && !selecting()) setTimeout(() => state.pending && render(), 0); });
 
 // ---------- the board: every state on one column, top to bottom ----------
 const ZONES = {
@@ -266,11 +277,13 @@ function renderProjects() {
     `<button class="chip" data-project="" aria-pressed="${!state.project}">All</button>`,
     ...state.projects.map((p) => `
       <button class="chip" data-project="${esc(p.id)}" aria-pressed="${state.project === p.id}" title="${esc(p.path || p.name)} · double-click to edit">
-        <span class="swatch" style="background:${esc(p.color)}"></span>${esc(p.name)}${total(p) ? `<span class="n">${total(p)}</span>` : ''}
+        <span class="swatch" style="background:${esc(p.color)}"></span>${esc(p.name)}${total(p) ? `<span class="n">${total(p)}</span>` : ''}${state.project === p.id ? `<span class="edit" data-edit-project title="Edit name, folder and color">${icons.pencil}</span>` : ''}
       </button>`),
     '<button class="chip add" data-new-project title="New project">+ Project</button>',
   ];
-  $('#projects').innerHTML = chips.join('');
+  // same chips: keep the buttons, so a double-click (to edit) lands on the button it started on
+  const chipsHtml = chips.join('');
+  if (chipsHtml !== renderProjects.last) $('#projects').innerHTML = renderProjects.last = chipsHtml;
 
   // The composer files new comments under the project chip that's selected, so
   // what you write lands in the list you're looking at. (The quick window has no
@@ -881,6 +894,8 @@ $('#items').addEventListener('click', async (ev) => {
     return load();
   }
   if (act || ev.target.closest('a, input, form, button')) return;
+  // selecting text (drag, double- or triple-click) isn't a click to expand
+  if (ev.detail > 1 || String(window.getSelection())) return;
 
   // click the sheet to see its history
   if (state.expanded.has(id)) state.expanded.delete(id);
@@ -950,11 +965,20 @@ $('#states').addEventListener('click', (ev) => {
   setTimeout(() => zone?.classList.remove('flash'), 900);
 });
 
+const lastChip = { id: null, at: 0 };
 $('#projects').addEventListener('click', (ev) => {
   const b = ev.target.closest('button');
   if (!b) return;
   if (b.hasAttribute('data-new-project')) return openProjectDialog();
-  showProject(b.dataset.project);
+  if (ev.target.closest('[data-edit-project]')) return openProjectDialog(state.projects.find((x) => x.id === b.dataset.project));
+  // double-click to edit: counted by hand, because the first click redraws the chips
+  // (the button you clicked is a new one by the second click, so 'dblclick' never fires)
+  const id = b.dataset.project, now = Date.now();
+  const twice = id && lastChip.id === id && now - lastChip.at < 450;
+  lastChip.id = twice ? null : id; lastChip.at = now;
+  if (twice) return openProjectDialog(state.projects.find((x) => x.id === id));
+  if (id === state.project) return;
+  showProject(id);
 });
 function showProject(id) {
   state.project = id;
@@ -967,11 +991,6 @@ function showProject(id) {
 $('#c-project').addEventListener('change', (ev) => {
   if (QUICK) { store.set('lastProject', ev.target.value); return renderTarget(); }
   showProject(ev.target.value);
-});
-$('#projects').addEventListener('dblclick', (ev) => {
-  const b = ev.target.closest('[data-project]');
-  const p = b && state.projects.find((x) => x.id === b.dataset.project);
-  if (p) openProjectDialog(p);
 });
 
 // drop screenshots straight onto a card
