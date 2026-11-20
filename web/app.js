@@ -272,10 +272,25 @@ function renderProjects() {
   ];
   $('#projects').innerHTML = chips.join('');
 
+  // The composer files new comments under the project chip that's selected, so
+  // what you write lands in the list you're looking at. (The quick window has no
+  // chips: it remembers the last project used.)
   const sel = $('#c-project');
-  const keep = sel.value || state.project || store.get('lastProject', '');
+  const keep = QUICK ? (sel.value || store.get('lastProject', '')) : state.project;
   sel.innerHTML = '<option value="">No project</option>' + state.projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   sel.value = state.projects.some((p) => p.id === keep) ? keep : '';
+  renderTarget();
+}
+
+/** Say which project the comment being written will hang on. */
+function renderTarget() {
+  const p = state.projects.find((x) => x.id === $('#c-project').value);
+  $('#c-target').innerHTML = p
+    ? `New comment on <span class="swatch" style="background:${esc(p.color)}"></span><b>${esc(p.name)}</b>`
+    : 'New comment, <b>no project</b>';
+  $('#composer').style.setProperty('--target', p ? p.color : 'var(--hair-2)');
+  $('#c-body').placeholder = `Hang a new comment on ${p ? p.name : 'no project'}… (paste or drop screenshots)`;
+  $('#composer [type=submit]').title = `Hang it on ${p ? p.name : 'no project'} (⌘↵)`;
 }
 
 const hash = (str) => { let h = 5381; for (let k = 0; k < str.length; k++) h = ((h << 5) + h + str.charCodeAt(k)) | 0; return (h >>> 0).toString(36); };
@@ -939,9 +954,19 @@ $('#projects').addEventListener('click', (ev) => {
   const b = ev.target.closest('button');
   if (!b) return;
   if (b.hasAttribute('data-new-project')) return openProjectDialog();
-  state.project = b.dataset.project;
-  store.set('project', state.project);
+  showProject(b.dataset.project);
+});
+function showProject(id) {
+  state.project = id;
+  store.set('project', id);
+  $('#c-project').value = id;
+  renderTarget();
   load();
+}
+// Picking a project in the composer switches the filter too, so they always match.
+$('#c-project').addEventListener('change', (ev) => {
+  if (QUICK) { store.set('lastProject', ev.target.value); return renderTarget(); }
+  showProject(ev.target.value);
 });
 $('#projects').addEventListener('dblclick', (ev) => {
   const b = ev.target.closest('[data-project]');
@@ -1040,6 +1065,7 @@ composer.addEventListener('submit', async (ev) => {
   const text = body.value.trim() || (pendingFiles.length ? 'Screenshot' : '');
   if (!text) return body.focus();
   const project = $('#c-project').value;
+  const where = state.projects.find((p) => p.id === project)?.name || 'no project';
   store.set('lastProject', project);
   try {
     const c = await api('POST', '/api/comments', { body: text, project: project || undefined, source: $('#c-source').value, location: $('#c-location').value });
@@ -1048,7 +1074,7 @@ composer.addEventListener('submit', async (ev) => {
     pendingFiles = []; renderFiles();
     body.value = ''; $('#c-location').value = ''; grow();
     state.status = 'open'; store.set('status', 'open');
-    toast(`Hung ${nameOf(c)}`);
+    toast(`Hung ${nameOf(c)} on ${where}`);
     if (QUICK) return quickClose('quickDone', c.id);
     await load();
     $('#line').scrollTop = 0;
@@ -1069,7 +1095,7 @@ window.gcQuick = ({ text = '' } = {}) => {
   body.value = text; grow();
   const sel = $('#c-project');
   const last = store.get('lastProject', '');
-  load().then(() => { if (state.projects.some((p) => p.id === last)) sel.value = last; }).catch(() => {});
+  load().then(() => { if (state.projects.some((p) => p.id === last)) sel.value = last; renderTarget(); }).catch(() => {});
   body.focus();
   body.setSelectionRange(body.value.length, body.value.length);
 };
