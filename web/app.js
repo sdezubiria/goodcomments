@@ -470,6 +470,12 @@ async function boardMove(li, id, status, note, { remote = false } = {}) {
   try { await Promise.all([request, sleep(220)]); }
   catch (e) { li.classList.remove('pulling'); settle(0); toast(e.message); return false; }
 
+  // the card that takes its place: the next one in the same section (or the one above if it was last)
+  const sib = (el, dir) => { do el = el?.[dir]; while (el && !el.matches?.('.item[data-id]')); return el; };
+  const nextId = Number((sib(li, 'nextElementSibling') || sib(li, 'previousElementSibling'))?.dataset.id) || null;
+  const fromZone = li.closest('.zone')?.dataset.zone;
+  const hadFocus = state.focusId === id;
+
   // the falling copy, pinned where the card is now
   const from = li.getBoundingClientRect();
   const ghost = li.cloneNode(true);
@@ -522,7 +528,33 @@ async function boardMove(li, id, status, note, { remote = false } = {}) {
   else if (!quietToast) toast({ fixed: `${n} moved to To check`, done: `${n} is done ✓`, open: `${n} reopened` }[status]);
   quietToast = false;
   settle(1200 * SLOW);
+  // let the landing register, then go back to where you were working
+  setTimeout(() => frameAfterMove(nextId, fromZone, hadFocus), 380 * SLOW);
   return true;
+}
+
+/**
+ * Scroll so the card that took the fallen one's place sits just under its section's
+ * sticky header, monkey and all. No card left there: show the section it fell from.
+ */
+function frameAfterMove(nextId, fromZone, hadFocus) {
+  const line = $('#line');
+  const card = nextId && $(`#items .item[data-id="${nextId}"]`);
+  const target = card || $(`#items .zone[data-zone="${fromZone}"]`);
+  if (!target) return;
+  if (card && hadFocus) { state.focusId = nextId; applyFocus(false); }
+  const view = line.getBoundingClientRect();
+  // the top of the card is its monkey or clip when they stick out above the sheet
+  const top = Math.min(...[target, ...(card ? card.querySelectorAll('.peg, .monkey, .pin') : [])]
+    .map((el) => el.getBoundingClientRect()).filter((r) => r.height).map((r) => r.top));
+  const head = card?.closest('.zone')?.querySelector('.zone-head');
+  // a stuck header sits at the line's top padding plus its own (negative) top, and covers that much
+  const covered = head ? parseFloat(getComputedStyle(line).paddingTop) + parseFloat(getComputedStyle(head).top) + head.offsetHeight : 0;
+  const goal = line.scrollTop + top - view.top - (card ? Math.max(0, covered) + 12 : 0);
+  const max = line.scrollHeight - line.clientHeight;
+  const y = Math.max(0, Math.min(max, Math.round(goal)));
+  if (Math.abs(y - line.scrollTop) < 2) return;
+  line.scrollTo({ top: y, behavior: reduceMotion() ? 'auto' : 'smooth' });
 }
 
 // ---------- motion helpers ----------
