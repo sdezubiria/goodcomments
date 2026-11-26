@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GoodComments</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Goudy+Bookletter+1911&family=Instrument+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- ink drawings shared by the board: a pen wobble, and the happy head on the pile -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <filter id="gc-wob" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="2" seed="7"/>
+        <feDisplacementMap in="SourceGraphic" scale="1.6"/>
+      </filter>
+      <symbol id="gc-head" viewBox="0 0 64 60">
+        <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path style="fill: var(--mfill)" d="M18.5 27 C13 25 10 29 12 33 C13.5 36 17 36 19 34.5"/>
+          <path style="fill: var(--mfill)" d="M45.5 27 C51 25 54 29 52 33 C50.5 36 47 36 45 34.5"/>
+          <path style="fill: var(--mfill)" d="M18 30 C17 20 25 14 32 14 C40 14 47 20 46 31 C45 41 39 46 32 46 C24 46 18 40 18 30 Z"/>
+          <circle cx="27" cy="28.5" r="2" fill="currentColor" stroke="none"/><circle cx="37" cy="28.5" r="2" fill="currentColor" stroke="none"/>
+          <path d="M27 35 Q32 41 37 35"/>
+        </g>
+      </symbol>
+    </defs>
+  </svg>
+
+  <aside class="column" id="column">
+    <header class="top">
+      <div class="brand">
+        <img class="logo" src="logo.svg" alt="" width="22" height="22">
+        <h1>GoodComments</h1>
+        <span class="live" id="live" title="Live"></span>
+        <button class="brand-btn" id="search-btn" title="Search comments (/)" aria-controls="search" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2l3.3 3.3"/></svg></button>
+        <button class="brand-btn" id="settings-btn" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        <div class="panel-ctl" id="panel-ctl" hidden>
+          <button id="pin" title="Keep open" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.8 2.2l4 4-2.1.7-2.7 2.7.2 2.9-1.3 1.3-2.5-2.5L2.6 14.2M5.3 8.4L2.8 5.9l1.3-1.3 2.9.2 2.7-2.7z"/></svg></button>
+          <button id="minimize" title="Minimize (⌃⌥C)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h8"/></svg></button>
+        </div>
+      </div>
+
+      <nav class="states" id="states" role="tablist">
+        <button data-status="open" role="tab"><span class="dot open"></span>On your mind<b></b></button>
+        <button data-status="fixed" role="tab"><span class="dot fixed"></span>To look at<b></b></button>
+        <button data-status="done" role="tab"><span class="dot done"></span>Let go<b></b></button>
+      </nav>
+
+      <div class="projects" id="projects"></div>
+
+      <div class="search" id="search" hidden>
+        <input id="q" type="search" placeholder="Search comments" aria-label="Search comments" autocomplete="off" title="/ search · j / k move · a approve · f fixed · r reopen · ↵ open · esc close">
+      </div>
+
+      <form class="composer" id="composer" autocomplete="off">
+        <p class="target" id="c-target" aria-live="polite"></p>
+        <textarea id="c-body" rows="1" placeholder="What’s on your mind?"></textarea>
+        <div class="files" id="c-files"></div>
+        <div class="composer-row">
+          <select id="c-project" aria-label="Project"></select>
+          <input id="c-source" list="sources" placeholder="From…" aria-label="Source">
+          <input id="c-location" placeholder="Where (url, page…)" aria-label="Where">
+          <button type="button" class="attach" id="c-shot" title="Take a screenshot and draw on it (⌃⌥S)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h2l1.2-1.8h4.6l1.2 1.8h2v7h-11z"/><circle cx="8" cy="8.8" r="2.3"/></svg></button>
+          <label class="attach" title="Attach screenshots or documents"><input type="file" id="c-file" multiple hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10.5 4.5L5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2"/></svg></label>
+          <button type="submit" class="primary" title="Hang it (⌘↵)">Hang</button>
+        </div>
+        <p class="quick-hint">↵ hang it · ⇧↵ new line · camera: pick an area and draw on it · click a screenshot to draw on it · esc cancel</p>
+        <datalist id="sources">
+          <option>Email</option><option>WhatsApp</option><option>Slack</option><option>Meeting</option>
+          <option>Call</option><option>Figma</option><option>Client</option><option>Me</option><option>Agent</option>
+        </datalist>
+      </form>
+    </header>
+
+    <div class="line" id="line">
+      <div class="rope" aria-hidden="true"></div>
+      <ol class="items" id="items"></ol>
+      <div class="empty" id="empty" hidden></div>
+    </div>
+  </aside>
+
+  <dialog id="settings-dialog">
+    <form method="dialog" id="settings-form">
+      <h2>Settings</h2>
+      <label>Clean up the pile automatically
+        <select name="auto_clean_days">
+          <option value="0">Never (use Sweep the pile)</option>
+          <option value="1">1 day after approving</option>
+          <option value="3">3 days after approving</option>
+          <option value="7">1 week after approving</option>
+          <option value="14">2 weeks after approving</option>
+          <option value="30">1 month after approving</option>
+        </select>
+      </label>
+      <div class="files-rule">
+        <label class="toggle"><input type="checkbox" name="files_auto_delete"> Delete screenshots automatically</label>
+        <div class="files-when">
+          <span>after</span>
+          <input type="number" name="files_delete_amount" min="1" max="999" step="1" required aria-label="How long">
+          <select name="files_delete_unit" aria-label="Unit">
+            <option value="1">hours</option>
+            <option value="24">days</option>
+            <option value="168">weeks</option>
+            <option value="720">months</option>
+            <option value="8760">years</option>
+          </select>
+          <select name="files_delete_from" aria-label="Counted from">
+            <option value="archived">from the clean-up</option>
+            <option value="done">from approving</option>
+            <option value="attached">from attaching (any comment)</option>
+          </select>
+        </div>
+        <p class="files-hint" id="files-hint"></p>
+      </div>
+      <label>Appearance
+        <select name="theme">
+          <option value="system">Same as macOS</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <label>Look
+        <select name="look">
+          <option value="monkeys">With monkeys</option>
+          <option value="simple">Simple, no monkeys</option>
+        </select>
+      </label>
+      <fieldset class="asks">
+        <legend>Ask before</legend>
+        <label class="toggle"><input type="checkbox" name="ask_before_agent"> Opening a Claude session (Ask Claude)</label>
+        <label class="toggle"><input type="checkbox" name="ask_before_delete"> Deleting a comment</label>
+      </fieldset>
+      <label>Language
+        <select name="language">
+          <option value="auto">Same as macOS</option>
+          <option value="en" translate="no">English</option>
+          <option value="es" translate="no">Español</option>
+        </select>
+      </label>
+      <div class="dialog-actions">
+        <span></span>
+        <button value="cancel" class="ghost">Cancel</button>
+        <button value="ok" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="project-dialog">
+    <form method="dialog" id="project-form" novalidate>
+      <h2 id="pd-title">New project</h2>
+      <label>Name <input name="name" required></label>
+      <label>Repo folder <span class="folder-row"><input name="path" placeholder="/Users/you/Code/repo (optional)"><button type="button" class="ghost" id="pd-choose" hidden>Choose…</button></span></label>
+      <label class="color">Color <input name="color" type="color" value="#7c5cff"></label>
+      <p class="hint">Agents working inside the repo folder pick the project automatically.</p>
+      <div class="dialog-actions">
+        <button type="button" class="ghost danger" id="pd-delete" hidden>Delete</button>
+        <span></span>
+        <button value="cancel" class="ghost" formnovalidate>Cancel</button>
+        <button value="ok" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <dialog id="lightbox" aria-label="Screenshot">
+    <img id="lb-img" alt="">
+    <button type="button" class="lb-btn lb-close" data-lb="close" title="Close (Esc)">✕</button>
+    <button type="button" class="lb-btn lb-prev" data-lb="prev" title="Previous (←)">‹</button>
+    <button type="button" class="lb-btn lb-next" data-lb="next" title="Next (→)">›</button>
+    <div class="lb-bar"><span id="lb-name"></span><span id="lb-count"></span><a id="lb-open" target="_blank" rel="noopener">Open in browser</a></div>
+  </dialog>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

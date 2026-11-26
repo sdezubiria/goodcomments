@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoodComments: comment it, let your agent fix it, review it</title>
+<meta name="description" content="A free, open source feedback tracker for your projects. Comments hang on a column at the edge of your screen: open, fixed by you or your agents, and done when you check them.">
+<link rel="icon" href="logo.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="img/icon-256.png?v=2">
+<link rel="modulepreload" id="pile-js" href="pile.js">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Goudy+Bookletter+1911&family=Caveat:wght@600&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+  /* The whole page is the column. One branch runs from the nav to the ground;
+     the three states sit on it in order, and finished comments land on the pile at the bottom (web/pile.js, copied here as pile.js). */
+  :root {
+    --paper: #fbf5ea; --sheet: #fffaf1; --sumi: #3a2a1c; --wash: #6e5b48; --mist: #a3907a; --moss: #6f8a4e;
+    --hair: rgba(58, 42, 28, .13); --edge: rgba(58, 42, 28, .58);
+    --display: "Goudy Bookletter 1911", "Iowan Old Style", Palatino, Georgia, serif;
+    --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
+    --hand: "Caveat", "Bradley Hand", cursive;
+    --spine-x: 44px;
+    --enso-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M14.2 4.6 A7 7 0 1 0 16.9 12.2' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    --enso-fixed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M12.6 3.4 A7 7 0 1 0 16.2 5.7' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    --enso-done: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 3 A7 7 0 1 1 9.2 3.05' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    --branch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 300' preserveAspectRatio='none'%3E%3Cpath d='M10 0 C12.5 48 7.5 102 10 150 C12.5 198 7.5 252 10 300' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M10.4 96 C13 90 16 88 19 88.5' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M9.6 232 C7 227 4 226 1.5 226.5' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #1d1813; --sheet: #241d17; --sumi: #eee3d1; --wash: #c2b29c; --mist: #8a7b68; --moss: #a3bd80;
+      --hair: rgba(238, 227, 209, .1); --edge: rgba(238, 227, 209, .55); color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--sumi); font: 17px/1.6 var(--body); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  a { color: inherit; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--sumi); outline-offset: 3px; border-radius: 4px; }
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .86em; }
+
+  .page { position: relative; max-width: 1140px; margin: 0 auto; padding: 0 28px 0 calc(var(--spine-x) + 56px); }
+  /* the branch: one stroke, top of the page to the ground */
+  .spine { position: absolute; left: calc(var(--spine-x) - 10px); top: 0; bottom: 118px; width: 20px; background: var(--wash);
+    -webkit-mask: var(--branch) top center / 20px 300px repeat-y; mask: var(--branch) top center / 20px 300px repeat-y; }
+
+  nav { display: flex; align-items: center; gap: 24px; padding: 26px 0; font-size: 15px; }
+  .brand { display: flex; align-items: center; gap: 10px; font: 400 24px/1 var(--display); text-decoration: none; }
+  .brand img { width: 28px; height: 28px; }
+  nav .links { margin-left: auto; display: flex; gap: 22px; }
+  nav .links a { color: var(--wash); text-decoration: none; }
+  nav .links a:hover { color: var(--sumi); text-decoration: underline; }
+  @media (max-width: 720px) { nav .links a:not(.keep) { display: none; } }
+
+  /* hero: the verbs on the left, a chain of monkeys hanging on the right */
+  .hero { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 48px; min-height: 640px; padding: 40px 0 96px; }
+  h1 { font: 400 clamp(42px, 5.7vw, 76px)/1.02 var(--display); letter-spacing: -.015em; margin: 0 0 32px; }
+  h1 span { display: block; text-wrap: balance; }
+  h1 s { display: block; font: 600 .78em/1.1 var(--hand); color: var(--wash); text-decoration-thickness: 3px; margin-top: 6px; }
+  .sub { max-width: 30em; color: var(--wash); font-size: 19px; margin: 0 0 30px; }
+  .get { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 999px; border: 1.5px solid var(--sumi); font: 600 15px/1 var(--body); text-decoration: none; background: var(--sumi); color: var(--paper); cursor: pointer; }
+  .btn.quiet { background: transparent; color: var(--sumi); }
+  .line { display: flex; align-items: center; gap: 10px; margin-top: 18px; max-width: 640px; padding: 7px 7px 7px 16px; border-radius: 12px; background: var(--sumi); color: var(--paper); }
+  .line code { flex: 1; overflow-x: auto; white-space: nowrap; scrollbar-width: none; font-size: 13.5px; }
+  .line button { flex: none; border: 0; border-radius: 999px; padding: 7px 13px; font: 600 12.5px/1 var(--body); color: inherit; background: color-mix(in srgb, var(--paper) 16%, transparent); cursor: pointer; }
+  .needs { margin: 14px 0 0; font-size: 14px; color: var(--mist); max-width: 34em; }
+
+  .chain { position: relative; }
+  .perch { position: absolute; left: -24px; right: -24px; top: 0; height: 14px; background: var(--wash);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 14' preserveAspectRatio='none'%3E%3Cpath d='M2 9 C80 11 170 4 298 7' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M210 6 C214 1 221 0 226 1 C223 5 217 7 210 6 Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 14' preserveAspectRatio='none'%3E%3Cpath d='M2 9 C80 11 170 4 298 7' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M210 6 C214 1 221 0 226 1 C223 5 217 7 210 6 Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
+  .rope { position: absolute; inset: 0; transform-origin: 44px 6px; animation: sway 7s ease-in-out infinite; }
+  @keyframes sway { 0%, 100% { transform: rotate(-.8deg); } 50% { transform: rotate(.8deg); } }
+  .card { position: absolute; left: 0; right: 0; transform-origin: 44px -22px; transition: top .85s cubic-bezier(.3, 1.25, .5, 1); }
+  .card .monkey { position: absolute; left: 14px; top: -30px; width: 60px; height: 51px; z-index: 2; }
+  .sheet { background: var(--sheet); border: 1.5px solid var(--edge); border-radius: 15px 18px 14px 17px / 17px 14px 18px 15px; padding: 20px 14px 12px; font-size: 14px; line-height: 1.45; }
+  .sheet .who { display: flex; gap: 8px; font-size: 12px; color: var(--mist); margin-bottom: 4px; }
+  .sheet .who b { color: var(--sumi); font-weight: 600; }
+  .sheet .note { display: none; margin-top: 8px; padding: 7px 9px; border-radius: 9px; border: 1px dashed var(--edge); font-size: 12.5px; }
+  .sheet .note em { display: block; font-style: normal; color: var(--mist); font-size: 11.5px; }
+  .card.fixed .note { display: block; }
+  .card.fixed .a2 { display: none; } .card .a2-down { display: none; } .card.fixed .a2-down { display: inline; }
+  .monkey { --mfill: color-mix(in srgb, var(--pc, var(--mist)) 30%, var(--sheet)); }
+  .monkey .arm, .monkey .hand, .monkey .mouth { fill: none; stroke: var(--sumi); stroke-width: 1.7; stroke-linecap: round; }
+  .monkey .face { fill: var(--mfill); stroke: var(--sumi); stroke-width: 1.8; stroke-linejoin: round; }
+  .monkey .eye { fill: var(--sumi); }
+  .toast { position: absolute; left: 50%; top: -44px; transform: translate(-50%, 8px); opacity: 0; transition: .4s; white-space: nowrap; background: var(--sumi); color: var(--paper); font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 999px; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+    .chain { height: 420px; max-width: 300px; margin-top: 64px; }
+  }
+
+  /* the three states, each sitting on the branch */
+  .state { position: relative; padding: 32px 0 104px; }
+  .knot { position: absolute; left: calc(-56px - 11px); top: 34px; width: 22px; height: 22px; background: var(--paper); }
+  .knot i { position: absolute; inset: 2px; background: var(--sumi); -webkit-mask: var(--enso-open) center / contain no-repeat; mask: var(--enso-open) center / contain no-repeat; }
+  .state.fixed .knot i { -webkit-mask-image: var(--enso-fixed); mask-image: var(--enso-fixed); }
+  .state.done .knot i { background: var(--moss); -webkit-mask-image: var(--enso-done); mask-image: var(--enso-done); }
+  .state > .name { font: 400 22px/1.2 var(--display); color: var(--wash); margin: 0 0 18px; }
+  h2 { font: 400 clamp(34px, 4.2vw, 52px)/1.08 var(--display); margin: 0 0 20px; max-width: 16em; text-wrap: balance; }
+  .prose { max-width: 34em; color: var(--wash); margin: 0 0 32px; }
+  .prose b { color: var(--sumi); font-weight: 600; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 44px; align-items: start; }
+  @media (max-width: 860px) { .two { grid-template-columns: minmax(0, 1fr); } }
+  .ways { list-style: none; margin: 0; padding: 0; }
+  .ways li { padding: 11px 0; border-top: 1px solid var(--hair); display: grid; grid-template-columns: 9.5em 1fr; gap: 16px; }
+  .ways li span { color: var(--wash); }
+  @media (max-width: 520px) { .ways li { grid-template-columns: 1fr; gap: 2px; } }
+  figure { margin: 0; }
+  figure img { display: block; width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--hair); }
+  figcaption { margin-top: 10px; font-size: 15px; color: var(--wash); }
+  .stack { display: grid; gap: 28px; }
+  pre { margin: 0; padding: 18px 20px; border-radius: 14px; background: var(--sumi); color: var(--paper); line-height: 1.65; overflow-x: auto; }
+  pre .c { opacity: .55; }
+  .gif { max-width: 340px; }
+  dl.small-things { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 44px; margin: 0; max-width: 900px; }
+  @media (max-width: 720px) { dl.small-things { grid-template-columns: minmax(0, 1fr); } }
+  dl.small-things div { padding: 14px 0; border-top: 1px solid var(--hair); }
+  dt { font: 400 21px/1.3 var(--display); margin-bottom: 4px; }
+  dd { margin: 0; color: var(--wash); font-size: 15.5px; }
+  kbd { font: inherit; font-size: .9em; padding: 0 5px; border: 1px solid var(--edge); border-radius: 5px; }
+
+  /* the ground: install, then the pile the branch ends in */
+  .install { padding: 24px 0 40px; }
+  .install .more { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 20px; font-size: 15px; }
+  .install details { margin-top: 24px; max-width: 640px; }
+  .install summary { cursor: pointer; color: var(--wash); }
+  .install details pre { margin-top: 12px; }
+  .ground { position: relative; height: 118px; margin-left: calc(-56px - 20px); }
+  /* the app's physics pile (web/pile.js places every head) */
+  .pile { position: absolute; left: 0; bottom: 0; width: min(360px, 62%); height: 112px; }
+  .heap.physics { position: absolute; left: 6px; right: 6px; top: 0; bottom: 2px; touch-action: none; -webkit-user-select: none; user-select: none; }
+  .heap.physics > i { position: absolute; left: 0; top: 0; width: 26px; height: 26px; cursor: grab; touch-action: none; will-change: transform; color: var(--wash);
+    --mfill: color-mix(in srgb, var(--pc, var(--mist)) 30%, var(--sheet)); }
+  .heap.physics > i svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: url(#gc-wob); }
+  .heap.physics.dragging, .heap.physics.dragging > * { cursor: grabbing; }
+  .heap.physics.sweeping > * { transition: opacity 1.6s ease-in .5s; opacity: 0; }
+  .ook { position: fixed; z-index: 70; pointer-events: none; white-space: nowrap; padding: 4px 9px; border-radius: 10px 10px 10px 3px; font: 600 12px/1.3 var(--body);
+    background: var(--sumi); color: var(--paper); animation: ook 1.7s cubic-bezier(.3, 1.6, .5, 1) forwards; transform-origin: 0 100%; }
+  @keyframes ook { 0% { transform: scale(.4); opacity: 0; } 15% { transform: none; opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
+  .ground::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1.5px; background: var(--wash); opacity: .5; }
+  .ground .count { position: absolute; right: 0; bottom: 14px; text-align: right; font-size: 14px; color: var(--wash); }
+  .ground .count button { display: block; margin: 6px 0 0 auto; border: 1.3px solid var(--edge); background: transparent; color: var(--sumi); border-radius: 999px; padding: 5px 13px; font: 500 13px/1.3 var(--body); cursor: pointer; }
+  footer { display: flex; flex-wrap: wrap; gap: 10px 22px; padding: 22px 0 48px; font-size: 14px; color: var(--mist); }
+  footer a { color: var(--wash); }
+
+  @media (max-width: 600px) {
+    :root { --spine-x: 18px; }
+    .page { padding: 0 20px 0 calc(var(--spine-x) + 26px); }
+    .knot { left: calc(-26px - 11px); }
+    .ground { margin-left: calc(-26px - 8px); }
+  }
+ 
+  /* how to open it: a Mac screen, played like a screen recording. The column is a real screenshot of the board,
+     and it slides with the Mac app's own timing (mac/Sources/GoodCommentsEdge/main.swift: 0.22 s on the edge,
+     0.32 s in, 0.6 s away, 0.24 s out) */
+  .edge { padding: 8px 0 96px; }
+  .edge h2 { max-width: 18em; }
+  .edge .prose kbd { color: var(--sumi); }
+  .screen { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; position: relative; container-type: inline-size; max-width: 900px; aspect-ratio: 1512 / 945; border-radius: 12px; overflow: hidden;
+    background: linear-gradient(165deg, #bccbd6 0%, #d9d3c7 55%, #e6d6bf 100%); box-shadow: 0 0 0 1px rgba(0, 0, 0, .18), 0 30px 60px -38px rgba(40, 30, 20, .6);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; color: #1d1d1f; -webkit-user-select: none; user-select: none; }
+  .mb { position: absolute; left: 0; right: 0; top: 0; height: 2.2cqw; display: flex; align-items: center; gap: 1.6cqw; padding: 0 1.4cqw;
+    background: rgba(246, 244, 240, .72); backdrop-filter: blur(10px); font-size: 1.05cqw; z-index: 2; }
+  .mb b { font-weight: 700; }
+  .mb .apple { width: 1cqw; height: 1.2cqw; }
+  .mb .right { margin-left: auto; display: flex; align-items: center; gap: 1.4cqw; }
+  .mb .gc { width: 1.45cqw; height: 1.45cqw; }
+  .mb .wifi { width: 1.3cqw; height: 1cqw; }
+  .browser { position: absolute; left: 6cqw; top: 4.8cqw; width: 58cqw; height: 52cqw; border-radius: .9cqw; overflow: hidden; background: #fff;
+    box-shadow: 0 0 0 .07cqw rgba(0, 0, 0, .25), 0 2.2cqw 4cqw -1.5cqw rgba(0, 0, 0, .35); }
+  .browser .chrome { height: 3.4cqw; display: flex; align-items: center; gap: .55cqw; padding: 0 1.1cqw; background: #f2f1ef; border-bottom: .07cqw solid #d9d7d3; }
+  .browser .chrome i { width: .9cqw; height: .9cqw; border-radius: 50%; background: #ff5f57; } .browser .chrome i + i { background: #febc2e; } .browser .chrome i + i + i { background: #28c840; }
+  .browser .url { margin: 0 auto; width: 50%; height: 2cqw; border-radius: .6cqw; background: #e4e2de; font-size: 1cqw; color: #555; display: flex; align-items: center; justify-content: center; }
+  .site { padding: 2.2cqw 3cqw; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: #10203f; }
+  .site nav { display: flex; align-items: center; gap: 2cqw; padding: 0; font: 500 1.05cqw/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: #51607a; }
+  .site nav span:first-child { margin-right: auto; display: flex; align-items: center; gap: .6cqw; font: 800 1.5cqw/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: #10203f; letter-spacing: -.02em; }
+  .site nav span:first-child::before { content: ""; width: 1.5cqw; height: 1.5cqw; border-radius: .4cqw; background: #2f6fec; }
+  .site nav span { white-space: nowrap; }
+  .site nav span:last-child { padding: .5cqw 1cqw; border-radius: .5cqw; background: #2f6fec; color: #fff; }
+  .site h3 { margin: 3.4cqw auto .8cqw; text-align: center; font: 700 2.8cqw/1.1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; letter-spacing: -.02em; }
+  .site p { margin: 0 auto; text-align: center; font: 1.1cqw/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: #51607a; }
+  .site .toggle { display: flex; width: max-content; margin: 1.6cqw auto 2cqw; padding: .3cqw; border-radius: 99px; background: #eef1f6; font: 600 1cqw/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+  .site .toggle span { padding: .55cqw 1.3cqw; border-radius: 99px; color: #51607a; } .site .toggle span:last-child { background: #fff; color: #10203f; box-shadow: 0 .1cqw .3cqw rgba(16, 32, 63, .15); }
+  .site .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2cqw; }
+  .site .plans div { padding: 1.4cqw; border: .1cqw solid #dfe4ec; border-radius: .8cqw; font: 600 1.05cqw/1.3 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+  .site .plans b { display: block; margin: .7cqw 0 1.2cqw; font: 700 2.4cqw/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; letter-spacing: -.02em; }
+  .site .plans b small { font-size: .45em; font-weight: 500; color: #51607a; }
+  .site .plans i { display: block; height: .5cqw; margin-top: .7cqw; border-radius: 1cqw; background: #eef1f6; }
+  .site .plans div:nth-child(2) { border-color: #2f6fec; box-shadow: 0 0 0 .1cqw #2f6fec; }
+  .panel { position: absolute; z-index: 3; top: calc(2.2cqw + .53cqw); bottom: .53cqw; right: .53cqw; width: 30.4cqw; border-radius: 1.2cqw; overflow: hidden;
+    background: #fbf5ea; box-shadow: 0 0 0 .04cqw rgba(255, 255, 255, .6), 0 0 0 .1cqw rgba(0, 0, 0, .12), 0 1.5cqw 4cqw -1cqw rgba(0, 0, 0, .4);
+    transform: translateX(calc(100% + 2.5cqw)); }
+  .panel img { display: block; width: 100%; height: auto; will-change: transform; }
+  .cursor { position: absolute; z-index: 4; left: 45%; top: 62%; width: 1.55cqw; height: 2.3cqw; pointer-events: none; }
+  .cursor svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 .1cqw .15cqw rgba(0, 0, 0, .35)); }
+  .rec { position: absolute; z-index: 5; right: 1.2cqw; bottom: 1cqw; display: none; }
+
+  /* the column inside the edge demo: a live copy of the board, 400 px wide, scaled to the panel */
+  .mini { position: absolute; left: 0; top: 0; width: 400px; transform-origin: 0 0; background: #fbf5ea; color: #3a2a1c; font: 14px/1.45 "Instrument Sans", -apple-system, sans-serif; overflow: hidden; }
+  .mini { --twig: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 12' preserveAspectRatio='none'%3E%3Cpath d='M1 7.5 C28 8.5 58 4 95 5.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M46 6.2 C49 1.8 54 0.8 58 1.6 C56 5 51.5 6.8 46 6.2 Z'/%3E%3C/svg%3E"); }
+  .mini .trunk { position: absolute; left: 21px; top: 100px; bottom: 0; width: 20px; background: #6e5b48; opacity: .8;
+    -webkit-mask: var(--branch) top center / 20px 300px repeat-y; mask: var(--branch) top center / 20px 300px repeat-y; }
+  .mini .top { display: flex; align-items: center; gap: 8px; padding: 13px 14px 11px; font: 400 19px/1 var(--display); border-bottom: 1px solid rgba(58, 42, 28, .13); }
+  .mini .top img { width: 22px; height: 22px; }
+  .mini .top span { margin-left: auto; font: 600 12px/1 "Instrument Sans", sans-serif; padding: 5px 10px; border-radius: 999px; background: color-mix(in srgb, #2f6fec 16%, #fbf5ea); color: #24427e; }
+  .mini .compose { margin: 12px 14px 4px 52px; min-height: 42px; padding: 10px 13px; border: 1.3px solid rgba(58, 42, 28, .3); border-radius: 14px; background: #fffaf1; color: #a3907a; }
+  .mini .compose.typing { color: #3a2a1c; border-color: #3a2a1c; }
+  .mini .compose.typing::after { content: ""; display: inline-block; width: 1.5px; height: 1.05em; margin-left: 1px; vertical-align: -2px; background: #3a2a1c; animation: caret 1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+  .mini .zone { position: relative; margin: 14px 12px 0 52px; }
+  .mini .zh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; padding: 6px 2px 7px; border-bottom: 1px dashed rgba(58, 42, 28, .2); }
+  .mini .zh .d { width: 14px; height: 14px; align-self: center; background: #3a2a1c; -webkit-mask: var(--enso-open) center / contain no-repeat; mask: var(--enso-open) center / contain no-repeat; }
+  .mini .zone.fx .zh .d { -webkit-mask-image: var(--enso-fixed); mask-image: var(--enso-fixed); }
+  .mini .zone.dn .zh .d { background: #6f8a4e; -webkit-mask-image: var(--enso-done); mask-image: var(--enso-done); }
+  .mini .zh h4 { margin: 0; font: 400 21px/1.1 var(--display); }
+  .mini .zh b { font-size: 12px; color: #a3907a; }
+  .mini .zh small { flex-basis: 100%; font-size: 12px; color: #a3907a; }
+  .mini .slot { position: relative; min-height: 34px; }
+  .mini .empty { padding: 9px 2px 4px; font-size: 12.5px; color: #a3907a; }
+  .mini .mcard { position: relative; margin: 34px 0 6px; transform-origin: 34px -26px; }
+  .mini .mcard .twig { position: absolute; left: -32px; top: -27px; width: 92px; height: 12px; background: #6e5b48;
+    -webkit-mask: var(--twig) center / 100% 100% no-repeat; mask: var(--twig) center / 100% 100% no-repeat; }
+  .mini .mcard .monkey { position: absolute; left: 6px; top: -34px; width: 60px; height: 51px; z-index: 2; }
+  .mini .mcard .sheet { background: #fffaf1; border: 1.5px solid rgba(58, 42, 28, .58); border-radius: 17px 19px 16px 18px / 18px 16px 19px 17px; padding: 20px 14px 12px; }
+  .mini .who { display: flex; gap: 6px; font-size: 12.5px; color: #a3907a; } .mini .who b { color: #3a2a1c; }
+  .mini .txt { margin: 3px 0 2px; font-size: 15px; }
+  .mini .loc { font-size: 12.5px; color: #a3907a; }
+  .mini .fixnote { display: none; margin-top: 9px; padding: 8px 10px; border: 1.2px dashed rgba(58, 42, 28, .3); border-radius: 11px; background: #f5ecdd; font-size: 13px; }
+  .mini .fixnote em { display: block; font-style: normal; font-weight: 600; font-size: 12px; color: #8a7660; }
+  .mini .acts { display: flex; gap: 7px; margin-top: 11px; }
+  .mini .act { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; border-radius: 999px; border: 1.3px solid rgba(58, 42, 28, .32); font-size: 13px; font-weight: 500; color: #3a2a1c; }
+  .mini .act.go { background: #3a2a1c; border-color: #3a2a1c; color: #fbf5ea; display: none; }
+  .mini .act.no { display: none; }
+  .mini .mcard.fixed .fixnote, .mini .mcard.fixed .act.go, .mini .mcard.fixed .act.no { display: inline-flex; }
+  .mini .mcard.fixed .fixnote { display: block; } .mini .mcard.fixed .act.mark { display: none; }
+  .mini .mcard.fixed .a2 { display: none; } .mini .mcard .a2-down { display: none; } .mini .mcard.fixed .a2-down { display: inline; }
+  .mini .pilebox { position: absolute; left: 52px; right: 12px; bottom: 0; height: 118px; }
+  .mini .pilebox .zh { position: absolute; left: 0; right: 0; top: 0; }
+  .mini .heap2 { position: absolute; left: 30px; right: 30px; bottom: 8px; height: 60px; }
+  .mini .heap2 i, .mini .heap2 .nana { position: absolute; bottom: 0; width: 26px; height: 26px; color: #6e5b48; --mfill: color-mix(in srgb, var(--pc, #a3907a) 30%, #fffaf1); }
+  .mini .heap2 i svg { width: 100%; height: 100%; overflow: visible; }
+  .mini .heap2 .nana { font-size: 20px; line-height: 26px; text-align: center; }
+  .mini .ground2 { position: absolute; left: 0; right: 0; bottom: 6px; height: 1.5px; background: rgba(58, 42, 28, .3); }
+  /* a macOS notification, and the menu bar monkey's count */
+  .note { position: absolute; z-index: 6; top: 3cqw; right: 1.2cqw; width: 26cqw; display: flex; gap: .9cqw; padding: 1cqw 1.1cqw; border-radius: 1.4cqw;
+    background: rgba(246, 245, 243, .86); backdrop-filter: blur(14px); box-shadow: 0 0 0 .07cqw rgba(0, 0, 0, .12), 0 1cqw 2.5cqw -1cqw rgba(0, 0, 0, .35);
+    font-size: 1.02cqw; line-height: 1.35; transform: translateX(calc(100% + 2cqw)); }
+  .note img { width: 2.7cqw; height: 2.7cqw; flex: none; }
+  .note b { display: block; } .note span { color: #444; }
+  .mb .badge { margin-left: -1.1cqw; min-width: 1.15cqw; height: 1.15cqw; padding: 0 .25cqw; border-radius: 1cqw; background: #e5483d; color: #fff; font: 700 .8cqw/1.15cqw -apple-system, sans-serif; text-align: center; transform: scale(0); }
+  .site .plans b.bananas { color: #b07d00; }
+  .site .plans b.flash { animation: flash .6s ease-out; }
+  @keyframes flash { from { background: #fff3c4; } }
+  .cursor.press svg { transform: scale(.86); transform-origin: 10% 10%; transition: transform .08s; }
+  @media (prefers-reduced-motion: reduce) { .panel { transform: none; } .cursor { left: calc(100% - 1.6cqw); top: 42%; } }
+  @media (max-width: 600px) { .screen { border-radius: 8px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="gc-wob" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="2" seed="7"/>
+      <feDisplacementMap in="SourceGraphic" scale="1.6"/>
+    </filter>
+    <symbol id="gc-head" viewBox="0 0 64 60">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path style="fill: var(--mfill)" d="M18.5 27 C13 25 10 29 12 33 C13.5 36 17 36 19 34.5"/>
+        <path style="fill: var(--mfill)" d="M45.5 27 C51 25 54 29 52 33 C50.5 36 47 36 45 34.5"/>
+        <path style="fill: var(--mfill)" d="M18 30 C17 20 25 14 32 14 C40 14 47 20 46 31 C45 41 39 46 32 46 C24 46 18 40 18 30 Z"/>
+        <circle cx="27" cy="28.5" r="2" fill="currentColor" stroke="none"/><circle cx="37" cy="28.5" r="2" fill="currentColor" stroke="none"/>
+        <path d="M27 35 Q32 41 37 35"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+<div class="page">
+  <div class="spine" aria-hidden="true"></div>
+
+  <nav>
+    <a class="brand" href="#"><img src="logo.svg?v=2" alt="" width="28" height="28">GoodComments</a>
+    <div class="links">
+      <a href="#open">How to open it</a>
+      <a href="#mind">How it works</a>
+      <a href="#agents">For agents</a>
+      <a href="#install">Install</a>
+      <a href="es/index.html" hreflang="es" lang="es">Español</a>
+      <a class="keep" href="https://github.com/sdezubiria/goodcomments">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <h1><span>Comment it.</span><span>Let your agent fix it.</span><span>Review it.</span><s>Check it off</s></h1>
+      <p class="sub">Feedback from email, WhatsApp, meetings and your agents hangs on a column hidden at the right edge of your Mac’s screen: move the pointer there and it slides in. Agents fix it and say where. You look it over and let it go.</p>
+      <div class="get">
+        <a class="btn" href="#install">Install for Mac</a>
+        <a class="btn quiet" href="https://github.com/sdezubiria/goodcomments">Read the source</a>
+      </div>
+      <div class="line"><code id="cmd-hero">curl -fsSL https://raw.githubusercontent.com/sdezubiria/goodcomments/main/install.sh | sh</code><button data-copy="cmd-hero">Copy</button></div>
+      <p class="needs">Free and open source (MIT). Everything stays on your Mac. No account, no analytics.</p>
+    </div>
+    <div class="chain" id="chain" aria-label="A demo: comments hang, an agent fixes the bottom one, and it drops off">
+      <div class="perch" aria-hidden="true"></div>
+      <div class="rope" id="rope"></div>
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+  </header>
+
+  <section class="edge" id="open">
+    <h2>To open it, push the pointer against the right edge of your screen.</h2>
+    <p class="prose">The column waits just past the right edge. Rest the pointer there for a moment and it slides in; move away and it slides back out of sight. Or press <kbd>⌃⌥C</kbd>. Pin it to keep it open.</p>
+    <div class="screen" id="screen" role="img" aria-label="A Mac screen: the pointer moves to the right edge and the GoodComments column slides in; the pointer scrolls the comments, moves away, and the column slides back out">
+      <div class="mb"><svg class="apple" viewBox="0 0 14 17" aria-hidden="true"><path fill="currentColor" d="M11.6 9c0-2 1.7-3 1.8-3.1-1-1.4-2.5-1.6-3-1.7-1.3-.1-2.5.8-3.1.8-.7 0-1.7-.8-2.8-.7C3 4.3 1.6 5.1.9 6.5c-1.5 2.6-.4 6.4 1.1 8.5.7 1 1.5 2.2 2.6 2.1 1-.1 1.4-.7 2.7-.7 1.3 0 1.6.7 2.7.7 1.1 0 1.8-1 2.5-2 .8-1.2 1.1-2.3 1.1-2.4 0 0-2-.8-2-3.7zM9.5 2.8c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.6 1 .1 1.9-.5 2.5-1.2z"/></svg><b>Safari</b><span>File</span><span>Edit</span><span>View</span><span>History</span>
+        <span class="right"><img class="gc" src="logo.svg?v=2" alt=""><span class="badge">1</span><svg class="wifi" viewBox="0 0 16 12" aria-hidden="true"><path fill="currentColor" d="M8 2.2c2.3 0 4.4.9 6 2.4l1.3-1.4A10.4 10.4 0 0 0 8 .3C5.2.3 2.6 1.4.7 3.2L2 4.6a8.5 8.5 0 0 1 6-2.4zm0 3.6c1.3 0 2.5.5 3.4 1.3l1.3-1.4A6.8 6.8 0 0 0 8 3.9a6.8 6.8 0 0 0-4.7 1.8l1.3 1.4C5.5 6.3 6.7 5.8 8 5.8zm0 3.4a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z"/></svg><span>Thu 26 Nov  10:41</span></span></div>
+      <div class="browser"><div class="chrome"><i></i><i></i><i></i><span class="url">acme.example/pricing</span></div>
+        <div class="site"><nav><span>Acme</span><span>Product</span><span>Pricing</span><span>Docs</span><span>Start free</span></nav><h3>Pricing that grows with you</h3><p>Start free. Upgrade when your team does.</p><div class="toggle"><span>Monthly</span><span>Annual · save 20%</span></div><div class="plans"><div>Starter<b>$0<small> /mo</small></b><i></i><i></i></div><div>Team<b>$24<small> /mo</small></b><i></i><i></i><i></i></div><div>Business<b>$59<small> /mo</small></b><i></i><i></i><i></i></div></div></div></div>
+      <div class="panel" id="panel"><div class="mini" id="mini"></div></div>
+      <div class="note" id="note"><img src="logo.svg?v=2" alt=""><div><b>GoodComments</b><span>claude fixed it: “The Annual toggle prices everything in bananas 🍌”</span></div></div>
+      <div class="cursor" id="cursor"><svg viewBox="0 0 16 24" aria-hidden="true"><path d="M1 1 L1 18.5 L5.3 14.6 L8.3 21.6 L11.3 20.3 L8.4 13.6 L14 13.6 Z" fill="#000" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+    </div>
+  </section>
+
+  <section class="state open" id="mind">
+    <div class="knot" aria-hidden="true"><i></i></div>
+    <p class="name">On your mind</p>
+    <h2>Hang it up from wherever the feedback arrives.</h2>
+    <p class="prose">Not tied to pull requests or commits. A comment is a sentence, a place (a page, a file and line) and, if you have one, a screenshot.</p>
+    <div class="two">
+      <ul class="ways">
+        <li><b>The column</b><span>Rest the pointer on the right edge of the screen, or press <kbd>⌃⌥C</kbd>.</span></li>
+        <li><b>Any app</b><span><kbd>⌃⌥N</kbd> opens a small window. Selected text goes through Services.</span></li>
+        <li><b>A screenshot</b><span><kbd>⌃⌥S</kbd> takes one and lets you draw on it: pen, arrow, box, text.</span></li>
+        <li><b>The terminal</b><span><code>gc add "Footer link 404s" -f shot.png</code></span></li>
+      </ul>
+      <figure><img src="img/card-screenshot.jpg" alt="A comment from Acme with a screenshot of the pricing page attached" loading="lazy" width="1040" height="516">
+        <figcaption>Paste with <kbd>⌘V</kbd> or drop images on a card. Agents receive them as images too.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="state fixed" id="agents">
+    <div class="knot" aria-hidden="true"><i></i></div>
+    <p class="name">To look at</p>
+    <h2>Your agent fixes it, and tells you where to look.</h2>
+    <p class="prose">An MCP server and a CLI that any agent can use. Inside a repo, agents find that project's comments on their own, fix them, and mark them fixed with a note, links and an after shot. <b>Only you can mark a comment done.</b></p>
+    <div class="two">
+      <div class="stack">
+<pre><span class="c"># once: give Claude Code the tools</span>
+claude mcp add goodcomments -s user -- \
+  node ~/.goodcomments/app/bin/gc.js mcp
+
+<span class="c"># or the CLI, from any agent or script</span>
+gc                    <span class="c"># this repo's open comments</span>
+gc show 12
+gc fix 12 "Resized the hero in header.php"</pre>
+        <figure><img src="img/to-check.jpg" alt="A fixed comment with the agent's note and an after screenshot, with Approve and Reopen buttons" loading="lazy" width="1040" height="664">
+          <figcaption>The note says what changed and where. Approve in one click, or open the file at the line.</figcaption></figure>
+      </div>
+      <div class="stack">
+        <figure><img src="img/reopened.jpg" alt="A reopened comment with the reason and a screenshot of what is still wrong" loading="lazy" width="1040" height="748">
+          <figcaption>Not right yet? Reopen it with a note and a screenshot. It climbs back up the branch, and the agent reads why.</figcaption></figure>
+        <p class="prose" style="margin:0"><b>Ask Claude</b> on any card opens a Claude Code session in that project's folder with the comment as its task. When it's fixed, you see the card drop and get a notification.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="state done" id="done">
+    <div class="knot" aria-hidden="true"><i></i></div>
+    <p class="name">Let go</p>
+    <h2>You check it. It falls on the pile.</h2>
+    <p class="prose">The pile grows as the project gets done, then clears itself after the days you choose. Cleaned comments can be restored, and every fix and reopen stays in a thread on the card.</p>
+    <dl class="small-things">
+      <div><dt>Projects by folder</dt><dd>Point a project at a repo and everything run inside it picks the right one.</dd></div>
+      <div><dt>Only on your Mac</dt><dd>Comments, history and screenshots live in one file on your Mac. Nothing is sent anywhere.</dd></div>
+      <div><dt>Keyboard first</dt><dd><kbd>j</kbd> and <kbd>k</kbd> move between cards, <kbd>a</kbd> approves, <kbd>r</kbd> reopens, <kbd>e</kbd> edits. <kbd>⌘Z</kbd> undoes a move.</dd></div>
+      <div><dt>Light on storage</dt><dd>Screenshots are shrunk before they're stored and deleted on your schedule, or kept.</dd></div>
+      <div><dt>The menu bar monkey</dt><dd>Shows how many comments wait for you. A notification opens the column on the card.</dd></div>
+      <div><dt>The monkeys themselves</dt><dd>They have opinions. Throw the ones on the pile around. There may be bananas.</dd></div>
+    </dl>
+  </section>
+
+  <section class="install" id="install">
+    <h2>Install in one line.</h2>
+    <p class="prose">Paste this in Terminal. It downloads GoodComments, adds the <code>gc</code> command, builds the menu bar app and, if you use Claude Code, connects it. Run it again to update.</p>
+    <div class="line"><code id="cmd-install">curl -fsSL https://raw.githubusercontent.com/sdezubiria/goodcomments/main/install.sh | sh</code><button data-copy="cmd-install">Copy</button></div>
+    <div class="line"><code id="cmd-brew">brew install sdezubiria/goodcomments/goodcomments</code><button data-copy="cmd-brew">Copy</button></div>
+    <p class="needs">Needs macOS 13 or later, <a href="https://nodejs.org">Node.js 22.13+</a> and Apple's Command Line Tools (<code>xcode-select --install</code>).</p>
+    <div class="more">
+      <a href="https://github.com/sdezubiria/goodcomments/blob/main/install.sh">Read the installer first</a>
+      <a href="https://github.com/sdezubiria/goodcomments/releases/latest">Latest release</a>
+      <a href="https://github.com/sdezubiria/goodcomments/archive/refs/heads/main.zip">Download the source</a>
+    </div>
+    <details>
+      <summary>Set it up by hand</summary>
+<pre>git clone https://github.com/sdezubiria/goodcomments.git
+cd goodcomments
+npm start      <span class="c"># the board at http://127.0.0.1:4477</span>
+npm link       <span class="c"># puts gc on your PATH</span>
+npm run mac && open mac/build/GoodComments.app</pre>
+    </details>
+  </section>
+
+  <div class="ground">
+    <div class="pile" title="Drag the monkeys around and throw them"><span class="heap physics" id="heap"></span></div>
+    <div class="count"><span id="count">0</span> on the pile<button id="sweep" type="button">Sweep the pile</button></div>
+  </div>
+  <footer>
+    <span>GoodComments, MIT License</span>
+    <a href="https://github.com/sdezubiria/goodcomments">GitHub</a>
+    <a href="https://github.com/sdezubiria/goodcomments/blob/main/AGENTS.md">Guide for agents</a>
+    <a href="https://github.com/sdezubiria/goodcomments/issues">Report an issue</a>
+  </footer>
+</div>
+
+<script type="module">
+  // pile.js is found through this link's href, so it still loads when the page is served from another folder
+  // (simondezubiria.com rewrites the page's src/href attributes to the theme folder)
+  const pile = await import(document.getElementById('pile-js').href);
+
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Select and copy'; }
+    setTimeout(() => (b.textContent = 'Copy'), 1600);
+  }));
+
+  const MONKEY = `<svg class="monkey" viewBox="0 0 64 54" aria-hidden="true">
+    <path class="arm" d="M26 31 C 20 25, 16 18, 17 9.5"/><path class="arm a2" d="M38 31 C 44 25, 48 18, 47 9.5"/><path class="arm a2-down" d="M40 37 C 47 40, 52 45, 54 50"/>
+    <path class="hand" d="M14.3 10.6 c.4-3.4 5.2-3.6 5.6-.2"/><path class="hand a2" d="M44.3 10.6 c.4-3.4 5.2-3.6 5.6-.2"/><path class="hand a2-down" d="M52.4 50.4 c1.4 2.6 4.2 2.4 4.8.2"/>
+    <g transform="translate(0 2)"><path class="face" d="M18.5 27 C13 25 10 29 12 33 C13.5 36 17 36 19 34.5"/><path class="face" d="M45.5 27 C51 25 54 29 52 33 C50.5 36 47 36 45 34.5"/>
+    <path class="face" d="M18 30 C17 20 25 14 32 14 C40 14 47 20 46 31 C45 41 39 46 32 46 C24 46 18 40 18 30 Z"/>
+    <circle class="eye" cx="27" cy="29" r="1.8"/><circle class="eye" cx="37" cy="29" r="1.8"/><path class="mouth" d="M28.5 36 Q32 40 35.5 36"/></g></svg>`;
+  const COMMENTS = [
+    ['Acme', '#2f6fec', 'Email', 'Pricing page: the annual toggle doesn’t update the prices', 'Fixed the toggle handler in pricing.js'],
+    ['Globex', '#22a55b', 'WhatsApp', 'Hero video stutters on Safari iOS', 'Re-encoded hero.mp4 with faststart'],
+    ['Initech', '#d633c4', 'Figma', 'Map legend overlaps the zoom buttons on mobile', 'Moved the legend to the bottom left in map.css'],
+    ['Northwind', '#f2a93b', 'Meeting', 'Footer still shows the old contact email', 'Updated footer.html and the contact page'],
+    ['Acme', '#2f6fec', 'Slack', 'Add customer logos above the signup form', 'Added the logo strip to signup.html'],
+  ];
+
+
+  // a chain of monkeys: each hangs from the card above; new comments hang at the top
+  const ropeEl = document.getElementById('rope');
+  const toastEl = document.getElementById('toast');
+  const heapEl = document.getElementById('heap');
+  const countEl = document.getElementById('count');
+  let next = 0, chain = [];
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function makeCard() {
+    const [proj, color, src, text, fix] = COMMENTS[next++ % COMMENTS.length];
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.style.setProperty('--pc', color);
+    el.dataset.pc = color;
+    el.innerHTML = `${MONKEY}<div class="sheet"><div class="who"><b>${proj}</b><span>from ${src}</span></div>${text}<div class="note"><em>Fixed by claude, just now</em>${fix}</div></div>`;
+    ropeEl.appendChild(el);
+    return el;
+  }
+  // each card hangs from the one above; when the chain lowers, the top moves first
+  function place() {
+    let y = 30;
+    chain.forEach((el, i) => { el.style.transitionDelay = i * 90 + 'ms'; el.style.top = y + 'px'; y += el.offsetHeight + 24; });
+  }
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const visible = () => new Promise((r) => { if (!document.hidden) return r(); document.addEventListener('visibilitychange', function f() { if (!document.hidden) { document.removeEventListener('visibilitychange', f); r(); } }); });
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove('show'), 1600);
+  }
+  // a head on the pile, built like the board's (app.js), and handed to the physics world
+  let keyN = 0;
+  function addHead(pc, isNew) {
+    const h = document.createElement('i');
+    h.dataset.key = `h${keyN++}`;
+    if (isNew) h.className = 'new';
+    h.style.setProperty('--pc', pc);
+    h.style.setProperty('--r', `${Math.round(Math.random() * 30 - 15)}deg`);
+    h.innerHTML = '<svg viewBox="16 14 32 32" aria-hidden="true"><use href="#gc-head" width="64" height="60"/></svg>';
+    heapEl.appendChild(h);
+    if (heapEl.children.length > 60) heapEl.firstElementChild.remove();
+    countEl.textContent = heapEl.children.length;
+    return h;
+  }
+
+
+  // an agent fixes the bottom card: the note opens and the card swings once on its monkey
+  function fixBottom() {
+    const el = chain[chain.length - 1];
+    el.classList.add('fixed');
+    toast('Fixed by an agent');
+    el.animate([{ transform: 'rotate(0)' }, { transform: 'rotate(3deg)' }, { transform: 'rotate(-1.8deg)' }, { transform: 'rotate(.8deg)' }, { transform: 'rotate(0)' }],
+      { duration: 1400, easing: 'ease-out' });
+  }
+  // you let it go: the monkey opens its hand and the card drops, picking up speed
+  async function letGoBottom() {
+    const el = chain.pop();
+    toast('Let go');
+    const tilt = Math.random() < .5 ? -7 : 7;
+    await el.animate([
+      { transform: 'translateY(0) rotate(0)', opacity: 1 },
+      { transform: `translateY(140px) rotate(${tilt * .5}deg)`, opacity: 1, offset: .55 },
+      { transform: `translateY(420px) rotate(${tilt}deg)`, opacity: 0 },
+    ], { duration: 1100, easing: 'cubic-bezier(.55, 0, .9, .45)', fill: 'forwards' }).finished;
+    el.remove();
+    const head = addHead(el.dataset.pc, true);
+    pile.attach(heapEl);
+    pile.release(head);
+  }
+  // someone hangs a new comment at the top; the chain lowers to make room
+  function hangNew() {
+    const el = makeCard();
+    el.style.top = '-40px';
+    chain.unshift(el);
+    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 500 });
+    requestAnimationFrame(() => requestAnimationFrame(place));
+  }
+  async function loop() {
+    for (;;) {
+      await wait(2200); await visible(); fixBottom();
+      await wait(2600); await visible(); await letGoBottom();
+      await wait(500); hangNew();
+    }
+  }
+
+  // Sweep the pile: the board's wind (pile.sweep), then the heads are gone
+  let sweeping = false;
+  async function sweep() {
+    if (sweeping || !heapEl.children.length) return;
+    sweeping = true;
+    pile.sweep();
+    await wait(pile.SWEEP_MS);
+    heapEl.replaceChildren();
+    heapEl.classList.remove('sweeping');
+    pile.attach(heapEl);
+    countEl.textContent = 0;
+    sweeping = false;
+  }
+  // poke a head: it jumps; three quick pokes and the whole pile jumps (as on the board)
+  function say(anchor, text) {
+    document.querySelector('.ook')?.remove();
+    const r = anchor.getBoundingClientRect();
+    const b = document.createElement('span');
+    b.className = 'ook'; b.textContent = text;
+    document.body.appendChild(b);
+    Object.assign(b.style, { left: `${Math.min(r.right - 8, innerWidth - 8 - b.offsetWidth)}px`, top: `${r.top - b.offsetHeight + 6}px` });
+    setTimeout(() => b.remove(), 1700);
+  }
+  let pokes = [];
+  pile.onPoke((head) => {
+    const now = Date.now();
+    pokes = pokes.filter((t) => now - t < 1500);
+    pokes.push(now);
+    if (pokes.length >= 3) { pokes = []; pile.kick(null, 1.2); return say(head, '🎉 Ook ook ook!'); }
+    pile.kick(head);
+    say(head, ['ook', 'zzz', 'eek', '…', 'wheee'][Math.floor(Math.random() * 5)]);
+  });
+  document.getElementById('sweep').addEventListener('click', sweep);
+
+  for (let k = 0; k < 34; k++) addHead(COMMENTS[k % COMMENTS.length][1]);
+  pile.attach(heapEl);
+  chain = [makeCard(), makeCard(), makeCard()];
+  chain.forEach((el) => (el.style.transition = 'none'));
+  place();
+  requestAnimationFrame(() => chain.forEach((el) => (el.style.transition = '')));
+  if (still) chain[2].classList.add('fixed'); else loop();
+
+  // the edge demo: a screen recording of the board at work on Acme's pricing page (the bananas bug)
+  const T = {"ph": "What’s on your mind?", "open": "On your mind", "openHint": "Write it down and a monkey holds it for you.", "empty": "Nothing on your mind.", "fixed": "To look at", "fixedHint": "An agent did it. Look it over, then let it go.", "none": "Nothing waiting for you.", "done": "Let go", "doneHint": "Off your mind. The pile grows as the project gets done.", "comment": "The Annual toggle prices everything in bananas 🍌", "who": "from you", "now": "now", "loc": "acme.example/pricing", "mark": "Mark fixed", "fixBy": "Fixed by claude · now", "fix": "pricing.js was multiplying by bananas_per_dollar (4) instead of the 20% discount. Dollars are back; checked Monthly and Annual.", "go": "Let it go", "no": "Not yet", "noteTitle": "GoodComments", "noteBody": "claude fixed it: “The Annual toggle prices everything in bananas 🍌”", "mo": " /mo", "yr": " /mo, yearly", "bananas": ["🍌 460", "🍌 1,113", "🍌 3,033"], "monthly": ["$12", "$29", "$79"], "annual": ["$10", "$23", "$63"]};
+  const screenEl = document.getElementById('screen');
+  const panelEl = document.getElementById('panel');
+  const cursorEl = document.getElementById('cursor');
+  const noteEl = document.getElementById('note');
+  const badgeEl = screenEl.querySelector('.mb .badge');
+  const toggleEls = screenEl.querySelectorAll('.site .toggle span');
+  const priceEls = screenEl.querySelectorAll('.site .plans b');
+  const miniEl = document.getElementById('mini');
+  const headSvg = '<svg viewBox="16 14 32 32" aria-hidden="true"><use href="#gc-head" width="64" height="60"/></svg>';
+  miniEl.innerHTML = `<div class="trunk"></div>
+    <div class="top"><img src="${document.getElementById('pile-js').href.replace(/pile\.js$/, 'logo.svg?v=2')}" alt="">GoodComments<span>Acme</span></div>
+    <div class="compose" id="m-compose"></div>
+    <div class="zone"><div class="zh"><i class="d"></i><h4>${T.open}</h4><b id="m-n-open">0</b><small>${T.openHint}</small></div><div class="slot" id="m-open"></div></div>
+    <div class="zone fx"><div class="zh"><i class="d"></i><h4>${T.fixed}</h4><b id="m-n-fixed">0</b><small>${T.fixedHint}</small></div><div class="slot" id="m-fixed"></div></div>
+    <div class="pilebox"><div class="zone dn" style="margin:0"><div class="zh"><i class="d"></i><h4>${T.done}</h4><b id="m-n-done">12</b></div></div>
+      <div class="heap2" id="m-heap"></div><div class="ground2"></div></div>`;
+  const $m = (id) => document.getElementById(id);
+  // the panel shows the 400 px board scaled down, like the real column at this screen size
+  const fit = () => { const k = panelEl.clientWidth / 400; miniEl.style.transform = `scale(${k})`; miniEl.style.height = panelEl.clientHeight / k + 'px'; };
+  new ResizeObserver(fit).observe(panelEl);
+  fit(); addEventListener('resize', fit);
+  // a settled heap of earlier comments on the pile
+  const PCS = ['#2f6fec', '#22a55b', '#d633c4', '#f2a93b'];
+  function seedHeap() {
+    const heap = $m('m-heap'); heap.innerHTML = '';
+    [[40, 0, -8], [64, 0, 6], [88, 0, -4], [112, 0, 10], [136, 0, -12], [160, 0, 4], [184, 0, -6], [52, 21, 8], [76, 21, -10], [100, 21, 3], [124, 21, -5], [88, 41, 7]]
+      .forEach(([x, y, r], k) => { const h = document.createElement('i'); h.innerHTML = headSvg; h.style.cssText = `left:${x}px;bottom:${y}px;--pc:${PCS[k % 4]};transform:rotate(${r}deg)`; heap.appendChild(h); });
+  }
+  function setPrices(kind) {
+    priceEls.forEach((b, k) => {
+      b.innerHTML = kind === 'bananas' ? `${T.bananas[k]}<small>${T.mo}</small>` : kind === 'annual' ? `${T.annual[k]}<small>${T.yr}</small>` : `${T.monthly[k]}<small>${T.mo}</small>`;
+      b.classList.toggle('bananas', kind === 'bananas');
+      b.classList.remove('flash'); void b.offsetWidth; if (kind !== 'monthly') b.classList.add('flash');
+    });
+    toggleEls[0].style.cssText = kind === 'monthly' ? 'background:#fff;color:#10203f;box-shadow:0 .1cqw .3cqw rgba(16,32,63,.15)' : '';
+    toggleEls[1].style.cssText = kind === 'monthly' ? 'background:none;color:#51607a;box-shadow:none' : '';
+  }
+  function reset() {
+    setPrices('monthly');
+    $m('m-compose').textContent = T.ph; $m('m-compose').classList.remove('typing');
+    $m('m-open').innerHTML = `<p class="empty">${T.empty}</p>`; $m('m-fixed').innerHTML = `<p class="empty">${T.none}</p>`;
+    $m('m-n-open').textContent = 0; $m('m-n-fixed').textContent = 0; $m('m-n-done').textContent = 12;
+    badgeEl.style.transform = ''; seedHeap();
+  }
+  let onScreen = false, wakeEdge = null;
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen && wakeEdge) { wakeEdge(); wakeEdge = null; } }, { threshold: .35 }).observe(screenEl);
+  const inView = () => (onScreen && !document.hidden ? Promise.resolve() : new Promise((r) => (wakeEdge = r)));
+  // where an element is, in % of the screen (the cursor moves in %)
+  function spot(el, fx = .5, fy = .5) {
+    const s = screenEl.getBoundingClientRect(), r = el.getBoundingClientRect();
+    return { left: (r.left + r.width * fx - s.left) / s.width * 100, top: (r.top + r.height * fy - s.top) / s.height * 100 };
+  }
+  let at = { left: 45, top: 70 };
+  function glide(to, ms) {
+    const from = at, mid = { left: (from.left + to.left) / 2 + (to.top - from.top) * .12, top: (from.top + to.top) / 2 - Math.abs(to.left - from.left) * .06 };
+    at = to;
+    const f = (p) => ({ left: p.left + '%', top: p.top + '%' });
+    return cursorEl.animate([f(from), { ...f(mid), offset: .55 }, f(to)], { duration: ms, easing: 'cubic-bezier(.45, .05, .25, 1)', fill: 'forwards' }).finished;
+  }
+  async function click() { cursorEl.classList.add('press'); await wait(130); cursorEl.classList.remove('press'); }
+  // the Mac app's own timing: 0.32 s in, 0.24 s out
+  const slide = (open) => panelEl.animate(
+    [{ transform: open ? 'translateX(calc(100% + 2.5cqw))' : 'none' }, { transform: open ? 'none' : 'translateX(calc(100% + 2.5cqw))' }],
+    { duration: open ? 320 : 240, easing: open ? 'cubic-bezier(.2, .95, .25, 1)' : 'ease-in', fill: 'forwards' }).finished;
+  const edge = { left: 99.3, top: 46 };
+  function makeMiniCard() {
+    const c = document.createElement('div');
+    c.className = 'mcard'; c.style.setProperty('--pc', '#2f6fec');
+    c.innerHTML = `<span class="twig"></span>${MONKEY}<div class="sheet"><div class="who"><b>Acme</b><span>${T.who}</span><span>${T.now}</span></div>
+      <div class="txt">${T.comment}</div><div class="loc">${T.loc}</div>
+      <div class="fixnote"><em>${T.fixBy}</em>${T.fix}</div>
+      <div class="acts"><span class="act mark">🔧 ${T.mark}</span><span class="act go">✓ ${T.go}</span><span class="act no">↶ ${T.no}</span></div></div>`;
+    return c;
+  }
+  async function story() {
+    for (;;) {
+      reset();
+      await inView();
+      await wait(900);
+      // 1. on Acme's pricing page: switch to Annual… and the prices come out in bananas
+      await glide(spot(toggleEls[1]), 1100); await wait(250); await click();
+      setPrices('bananas');
+      await wait(700);
+      await glide(spot(priceEls[1], .6, .6), 700); await wait(1500);
+      // 2. straight to the right edge: the column slides in
+      await glide(edge, 1000); await wait(220); await slide(true); await wait(350);
+      // 3. write it down
+      const box = $m('m-compose');
+      await glide(spot(box, .3, .5), 650); await click(); box.textContent = ''; box.classList.add('typing');
+      for (const ch of T.comment) { box.textContent += ch; await wait(ch === ' ' ? 70 : 38 + Math.random() * 40); }
+      await wait(450);
+      box.classList.remove('typing'); box.textContent = T.ph;
+      const card = makeMiniCard();
+      $m('m-open').replaceChildren(card); $m('m-n-open').textContent = 1;
+      card.animate([{ transform: 'translateY(-18px) rotate(-4deg)', opacity: 0 }, { transform: 'rotate(2deg)', opacity: 1, offset: .5 }, { transform: 'none' }], { duration: 800, easing: 'cubic-bezier(.3, 1.3, .5, 1)' });
+      await wait(1300);
+      // 4. back to work; the column tucks away
+      await glide({ left: 40, top: 66 }, 1000); await wait(600); await slide(false);
+      // 5. a while later: claude fixed it. The page is back in dollars, and a notification says so
+      await wait(1100);
+      card.classList.add('fixed'); $m('m-fixed').replaceChildren(card); $m('m-open').innerHTML = `<p class="empty">${T.empty}</p>`;
+      $m('m-n-open').textContent = 0; $m('m-n-fixed').textContent = 1;
+      setPrices('annual');
+      badgeEl.animate([{ transform: 'scale(0)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 400, fill: 'forwards' });
+      await noteEl.animate([{ transform: 'translateX(calc(100% + 2cqw))' }, { transform: 'none' }], { duration: 450, easing: 'cubic-bezier(.2, .95, .25, 1)', fill: 'forwards' }).finished;
+      await wait(2600);
+      await noteEl.animate([{ transform: 'none' }, { transform: 'translateX(calc(100% + 2cqw))' }], { duration: 300, easing: 'ease-in', fill: 'forwards' }).finished;
+      await glide(spot(priceEls[1], .5, .6), 900); await wait(900);   // dollars again
+      // 6. to the edge, look it over, let it go: onto the pile, with a banana for the monkey
+      await glide(edge, 900); await wait(220); await slide(true); await wait(500);
+      await glide(spot(card.querySelector('.fixnote'), .5, .55), 700); await wait(1800);
+      const goBtn = card.querySelector('.act.go');
+      await glide(spot(goBtn), 600); await wait(250); await click();
+      const fall = card.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateY(90px) rotate(4deg)', opacity: 1, offset: .4 }, { transform: 'translateY(360px) rotate(9deg) scale(.5)', opacity: 0 }],
+        { duration: 900, easing: 'cubic-bezier(.55, 0, .9, .45)', fill: 'forwards' });
+      await fall.finished;
+      $m('m-fixed').innerHTML = `<p class="empty">${T.none}</p>`; $m('m-n-fixed').textContent = 0; $m('m-n-done').textContent = 13;
+      badgeEl.animate([{ transform: 'scale(1)' }, { transform: 'scale(0)' }], { duration: 250, fill: 'forwards' });
+      const head = document.createElement('i'); head.innerHTML = headSvg; head.style.cssText = 'left:112px;bottom:41px;--pc:#2f6fec;transform:rotate(-6deg)';
+      $m('m-heap').appendChild(head);
+      head.animate([{ transform: 'translateY(-160px) rotate(0)' }, { transform: 'translateY(3px) rotate(-10deg)', offset: .8 }, { transform: 'rotate(-6deg)' }], { duration: 750, easing: 'cubic-bezier(.4, 0, .6, 1)' });
+      await wait(500);
+      const nana = document.createElement('span'); nana.className = 'nana'; nana.textContent = '🍌'; nana.style.cssText = 'left:138px;bottom:41px;transform:rotate(30deg)';
+      $m('m-heap').appendChild(nana);
+      nana.animate([{ transform: 'translateY(-170px) rotate(-120deg)' }, { transform: 'translateY(2px) rotate(40deg)', offset: .8 }, { transform: 'rotate(30deg)' }], { duration: 900, easing: 'cubic-bezier(.4, 0, .6, 1)' });
+      await wait(1700);
+      // 7. done: the column goes, the page stays in dollars
+      await glide({ left: 46, top: 70 }, 1000); await wait(600); await slide(false);
+      await wait(2600);
+    }
+  }
+  reset();
+  if (still) { panelEl.style.transform = 'none'; setPrices('bananas'); const c = makeMiniCard(); $m('m-open').replaceChildren(c); $m('m-n-open').textContent = 1; }
+  else story();
+
+</script>
+</body>
+</html>

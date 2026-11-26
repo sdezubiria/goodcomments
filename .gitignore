@@ -1,0 +1,7 @@
+mac/build/
+*.db
+*.db-wal
+*.db-shm
+node_modules/
+.claude/
+.DS_Store
