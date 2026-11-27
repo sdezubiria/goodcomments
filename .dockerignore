@@ -1,0 +1,8 @@
+.git
+mac
+docs
+brand
+node_modules
+*.db
+*.db-wal
+*.db-shm
