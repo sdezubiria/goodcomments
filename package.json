@@ -2,10 +2,17 @@
   "name": "goodcomments",
   "version": "0.2.0",
   "description": "Track feedback and comments across projects: open → fixed → done. Built for humans and agents.",
+  "mcpName": "io.github.sdezubiria/goodcomments",
   "type": "module",
   "bin": {
     "gc": "bin/gc.js"
   },
+  "files": [
+    "bin/",
+    "server/",
+    "web/",
+    "AGENTS.md"
+  ],
   "scripts": {
     "start": "node --no-warnings server/index.js",
     "mcp": "node --no-warnings bin/gc.js mcp",
@@ -14,5 +21,18 @@
   "engines": {
     "node": ">=22.13"
   },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "claude-code",
+    "feedback",
+    "ai-agents"
+  ],
+  "homepage": "https://simondezubiria.com/goodcomments/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sdezubiria/goodcomments.git"
+  },
+  "bugs": "https://github.com/sdezubiria/goodcomments/issues",
   "license": "MIT"
 }

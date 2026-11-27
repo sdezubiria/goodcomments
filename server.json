@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.sdezubiria/goodcomments",
+  "title": "GoodComments",
+  "description": "Drop tasks for your agent, then look them over and let them go. Local feedback tracker.",
+  "version": "0.2.0",
+  "websiteUrl": "https://simondezubiria.com/goodcomments/",
+  "repository": {
+    "url": "https://github.com/sdezubiria/goodcomments",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "goodcomments",
+      "version": "0.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "GOODCOMMENTS_ACTOR",
+          "description": "Name shown on changes the agent makes, e.g. claude.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
