@@ -14,6 +14,7 @@
     "AGENTS.md"
   ],
   "scripts": {
+    "test": "node --no-warnings test/mcp-smoke.mjs",
     "start": "node --no-warnings server/index.js",
     "mcp": "node --no-warnings bin/gc.js mcp",
     "mac": "sh mac/build.sh"
