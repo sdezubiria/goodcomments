@@ -1,5 +1,7 @@
 # GoodComments
 
+[![GoodComments MCP server](https://glama.ai/mcp/servers/sdezubiria/goodcomments/badges/score.svg)](https://glama.ai/mcp/servers/sdezubiria/goodcomments)
+
 Feedback tracker for all your projects, hung on a line at the right edge of your screen.
 Every comment goes **open → fixed → done**: agents (or you) fix, you check and approve.
 
